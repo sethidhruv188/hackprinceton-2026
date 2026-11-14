@@ -232,9 +232,16 @@ def build_item_map(d):
     return codes.drop(columns=["sig", "is_plain"])
 
 
+# Weights and volumes ("(400 Gram)", "908 Grams", "2 lb", "1.5 L") are removed before the category keywords
+# run, so a unit can never decide the category: "gram" in "Horse Gram" or "Gram Flour" is a dal, "400 Gram" is not.
+WEIGHT = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)?\s*(?:kgs?|kilos?|kilograms?|grams?|grms?|gms?|gr|g|lbs?|pounds?|"
+                    r"ounces?|oz|ml|l|ltrs?|litres?|liters?)\b\.?", re.IGNORECASE)
+
+
 def categorize(desc):
+    text = WEIGHT.sub(" ", desc)
     for cat, shelf, lead, rx in _CAT_RX:
-        if rx.search(desc):
+        if rx.search(text):
             return cat, shelf, lead
     return DEFAULT
 

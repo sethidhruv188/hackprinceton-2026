@@ -32,6 +32,30 @@ def test_category_whole_words():
     assert ingest.categorize("Amul Mango Lassi 1 L")[0] == "dairy"
 
 
+@pytest.mark.parametrize("name, cat", [
+    ("Aara Green Raisin 14 OZ (400 Gram) X 20 X", "nuts_dry_fruits"),     # weight in grams is not a dal
+    ("Aara Basmati Rice 2lb (908 Gram) X 20 X", "rice_flour"),
+    ("Aara Corn Poha 800 Gram (28 OZ) X 5 X", "rice_flour"),
+    ("Brand Vada Pav 256 Grams X 20 PKT", "other"),                         # plural unit too
+    ("Brand Coconut Powder 1.5 grams X 10", "nuts_dry_fruits"),            # decimals
+    ("Aara Horse Gram 2 lb X 20", "lentils_beans"),                         # named grams stay dals
+    ("Brand Bengal Gram Whole 4 lb X 10", "lentils_beans"),
+    ("Brand Green Gram Split 908 Gm X 20", "lentils_beans"),
+    ("Aara Besan (Gram Flour) - 2 Lbs (908 Gm) X 20 Packets", "lentils_beans"),
+    ("Aara Dalia (Roasted Split Gram) - 28 Oz (800 Gm) X 10", "lentils_beans"),
+])
+def test_weights_do_not_set_category(name, cat):
+    assert ingest.categorize(name)[0] == cat
+
+
+def test_basmati_rice_joins_rice_harvest_rule():
+    from inventory import stock_plan as SP
+    products = pd.DataFrame({"product_id": ["R1"], "name": ["Aara Basmati Rice 2lb (908 Gram) X 20 X"]})
+    products["category"] = products["name"].map(lambda n: ingest.categorize(n)[0])
+    confirmed, _ = SP.harvest_members(products, SP.harvest_rules())
+    assert "R1" in confirmed and confirmed["R1"]["rule_id"] == "rice"
+
+
 def plan_rows():
     rows = []
     for pid, brand_name in (("A1", "Aara Cumin"), ("A2", "Aara Peanuts"), ("A3", "Aara Hold")):
