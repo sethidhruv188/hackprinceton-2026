@@ -64,3 +64,39 @@ def clean_demand(panel, suspected=None):
                 g.at[m, "imputed"] = True
         out.append(g.reset_index())
     return pd.concat(out, ignore_index=True).sort_values(["product_id", "month"]).reset_index(drop=True)
+
+
+def relabel_holds(data_dir="data"):
+    """Owner's answer: the suspected unrecorded gaps are products on hold. Write them into
+    sales.csv as status "fda_hold" with hold_source = "gap_detection" (rows are added for months
+    with no sales line). Idempotent: months already on hold are not detected again.
+    Returns dict(relabelled=new months this call, total=all gap-detection hold months)."""
+    from pathlib import Path
+    from .schema import load
+    path = Path(data_dir) / "sales.csv"
+    sales = pd.read_csv(path, dtype={"product_id": str})
+    if "hold_source" not in sales:
+        sales["hold_source"] = ""
+    sales["hold_source"] = sales["hold_source"].fillna("")
+    # Detect on the history as recorded (earlier gap-detection holds reset), so the list is the
+    # same every time; relabelling and detecting again would otherwise cascade to new months.
+    prior = sales["hold_source"] == "gap_detection"
+    sales.loc[prior, "status"] = "sellable"
+    sales.loc[prior, "hold_source"] = ""
+    sales.to_csv(path, index=False)
+    panel, _, _ = load(data_dir)
+    sus = detect_unflagged_gaps(panel)
+    months = [(r.product_id, m.strftime("%Y-%m")) for r in sus.itertuples()
+              for m in pd.date_range(r.start, r.end, freq="MS")]
+    if months:
+        new = pd.DataFrame(months, columns=["product_id", "month"])
+        key = sales.set_index(["product_id", "month"]).index
+        exists = new.set_index(["product_id", "month"]).index.isin(key)
+        add = new[~exists].assign(units_sold=0.0, status="fda_hold", hold_source="gap_detection")
+        hit = sales.set_index(["product_id", "month"]).index.isin(new.set_index(["product_id", "month"]).index)
+        sales.loc[hit, "status"] = "fda_hold"
+        sales.loc[hit, "hold_source"] = "gap_detection"
+        sales = pd.concat([sales, add], ignore_index=True).sort_values(["product_id", "month"])
+        sales.to_csv(path, index=False)
+    total = int((sales["hold_source"] == "gap_detection").sum())
+    return dict(relabelled=len(months), runs=len(sus), total=total)

@@ -5,13 +5,14 @@ products.csv  product_id, name, category, shelf_life_days, lead_time_days, unit_
               primary_source (optional), backup_source (optional)
 stock.csv     product_id, on_hand_units, held_units, earliest_expiry (YYYY-MM-DD, optional)
 
-status values: sellable | fda_hold | stockout | recall. Anything other than
-"sellable" means sales that month do NOT reflect demand.
+status values: sellable | fda_hold | stockout | recall | not_listed. Anything other than
+"sellable" means sales that month do NOT reflect demand ("not_listed" = before the product's
+first sale, written by ingest.py).
 """
 from pathlib import Path
 import pandas as pd
 
-UNAVAILABLE = {"fda_hold", "stockout", "recall"}
+UNAVAILABLE = {"fda_hold", "stockout", "recall", "not_listed"}
 
 
 def load(data_dir="data"):
@@ -37,4 +38,7 @@ def load(data_dir="data"):
     panel = sales.set_index(["product_id", "month"]).reindex(grid).reset_index()
     panel["units_sold"] = panel["units_sold"].fillna(0)
     panel["status"] = panel["status"].fillna("sellable")
+    for col in ("case_weight_kg", "shelf_life_days", "unit_cost"):   # optional; blank = unknown
+        if col not in products:
+            products[col] = float("nan")
     return panel.sort_values(["product_id", "month"]).reset_index(drop=True), products, stock

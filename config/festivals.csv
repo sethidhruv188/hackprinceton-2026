@@ -1,0 +1,67 @@
+festival,group,tier,main_date,start_date,end_date,status,note
+Raksha Bandhan,raksha_bandhan,0,2024-08-19,2024-08-19,2024-08-19,confirmed,
+Raksha Bandhan,raksha_bandhan,0,2025-08-09,2025-08-09,2025-08-09,confirmed,
+Raksha Bandhan,raksha_bandhan,0,2026-08-28,2026-08-28,2026-08-28,confirmed,some calendars list Aug 27
+Raksha Bandhan,raksha_bandhan,0,2027-08-17,2027-08-17,2027-08-17,projected,Drik Panchang lists Aug 16
+Ganesh Chaturthi,ganesh_chaturthi,0,2024-09-07,2024-09-07,2024-09-07,confirmed,
+Ganesh Chaturthi,ganesh_chaturthi,0,2025-08-27,2025-08-27,2025-08-27,confirmed,
+Ganesh Chaturthi,ganesh_chaturthi,0,2026-09-14,2026-09-14,2026-09-14,confirmed,
+Ganesh Chaturthi,ganesh_chaturthi,0,2027-09-04,2027-09-04,2027-09-04,projected,
+Navratri + Dussehra,navratri_dussehra,0,2024-10-12,2024-10-03,2024-10-12,confirmed,main_date = Dussehra
+Navratri + Dussehra,navratri_dussehra,0,2025-10-02,2025-09-22,2025-10-02,confirmed,window spans Sep and Oct
+Navratri + Dussehra,navratri_dussehra,0,2026-10-20,2026-10-11,2026-10-20,confirmed,
+Navratri + Dussehra,navratri_dussehra,0,2027-10-09,2027-09-30,2027-10-09,projected,window spans Sep and Oct
+Diwali (Dhanteras to Bhai Dooj),diwali,1,2024-10-31,2024-10-29,2024-11-03,confirmed,Delhi panchang lists Lakshmi Puja Nov 1; US temples and HAF list Oct 31. Window spans Oct and Nov
+Diwali (Dhanteras to Bhai Dooj),diwali,1,2025-10-20,2025-10-18,2025-10-23,confirmed,
+Diwali (Dhanteras to Bhai Dooj),diwali,1,2026-11-08,2026-11-06,2026-11-11,confirmed,
+Diwali (Dhanteras to Bhai Dooj),diwali,1,2027-10-29,2027-10-27,2027-10-31,projected,some calendars list Oct 28
+Lohri / Makar Sankranti / Pongal,sankranti,0,2025-01-14,2025-01-13,2025-01-15,confirmed,
+Lohri / Makar Sankranti / Pongal,sankranti,0,2026-01-14,2026-01-13,2026-01-15,confirmed,
+Lohri / Makar Sankranti / Pongal,sankranti,0,2027-01-15,2027-01-14,2027-01-16,projected,
+Holi,holi,0,2025-03-14,2025-03-13,2025-03-14,confirmed,start = Holika Dahan
+Holi,holi,0,2026-03-04,2026-03-03,2026-03-04,confirmed,some calendars list Holi Mar 3
+Holi,holi,0,2027-03-22,2027-03-21,2027-03-22,projected,
+Ramadan,ramadan,0,2025-03-01,2025-03-01,2025-03-29,confirmed,US start
+Ramadan,ramadan,0,2026-02-18,2026-02-18,2026-03-19,confirmed,US start; spans Feb and Mar
+Ramadan,ramadan,0,2027-02-08,2027-02-08,2027-03-08,projected,spans Feb and Mar
+Eid al-Fitr,eid_al_fitr,0,2025-03-30,2025-03-30,2025-03-30,confirmed,US date; India Mar 31
+Eid al-Fitr,eid_al_fitr,0,2026-03-20,2026-03-20,2026-03-20,confirmed,US date
+Eid al-Fitr,eid_al_fitr,0,2027-03-09,2027-03-09,2027-03-09,projected,may be Mar 10
+Eid al-Adha,eid_al_adha,0,2025-06-06,2025-06-06,2025-06-06,confirmed,US date; India Jun 7
+Eid al-Adha,eid_al_adha,0,2026-05-27,2026-05-27,2026-05-27,confirmed,US date
+Eid al-Adha,eid_al_adha,0,2027-05-16,2027-05-16,2027-05-16,projected,
+Krishna Janmashtami,janmashtami,0,2024-08-26,2024-08-26,2024-08-26,confirmed,
+Krishna Janmashtami,janmashtami,0,2025-08-16,2025-08-16,2025-08-16,confirmed,Smarta Aug 15
+Krishna Janmashtami,janmashtami,0,2026-09-04,2026-09-04,2026-09-04,confirmed,Smarta Sep 3
+Krishna Janmashtami,janmashtami,0,2027-08-25,2027-08-25,2027-08-25,projected,may be Aug 24
+Onam,onam,0,2024-09-15,2024-09-15,2024-09-15,confirmed,
+Onam,onam,0,2025-09-05,2025-09-05,2025-09-05,confirmed,
+Onam,onam,0,2026-08-26,2026-08-26,2026-08-26,confirmed,
+Onam,onam,0,2027-09-12,2027-09-12,2027-09-12,projected,
+Karwa Chauth,karwa_chauth,0,2024-10-20,2024-10-20,2024-10-20,confirmed,
+Karwa Chauth,karwa_chauth,0,2025-10-10,2025-10-10,2025-10-10,confirmed,
+Karwa Chauth,karwa_chauth,0,2026-10-29,2026-10-29,2026-10-29,confirmed,some calendars list Oct 28
+Karwa Chauth,karwa_chauth,0,2027-10-18,2027-10-18,2027-10-18,projected,
+Chhath Puja,chhath,0,2024-11-07,2024-11-07,2024-11-07,confirmed,
+Chhath Puja,chhath,0,2025-10-27,2025-10-27,2025-10-27,confirmed,
+Chhath Puja,chhath,0,2026-11-15,2026-11-15,2026-11-15,confirmed,
+Chhath Puja,chhath,0,2027-11-04,2027-11-04,2027-11-04,projected,
+Guru Nanak Jayanti,guru_nanak_jayanti,0,2024-11-15,2024-11-15,2024-11-15,confirmed,
+Guru Nanak Jayanti,guru_nanak_jayanti,0,2025-11-05,2025-11-05,2025-11-05,confirmed,
+Guru Nanak Jayanti,guru_nanak_jayanti,0,2026-11-24,2026-11-24,2026-11-24,confirmed,Kartika Purnima
+Guru Nanak Jayanti,guru_nanak_jayanti,0,2027-11-14,2027-11-14,2027-11-14,projected,
+Maha Shivaratri,maha_shivaratri,0,2025-02-26,2025-02-26,2025-02-26,confirmed,
+Maha Shivaratri,maha_shivaratri,0,2026-02-15,2026-02-15,2026-02-15,confirmed,
+Maha Shivaratri,maha_shivaratri,0,2027-03-06,2027-03-06,2027-03-06,projected,
+Ugadi / Gudi Padwa / Chaitra Navratri,ugadi,0,2025-03-30,2025-03-30,2025-03-30,confirmed,
+Ugadi / Gudi Padwa / Chaitra Navratri,ugadi,0,2026-03-19,2026-03-19,2026-03-19,confirmed,
+Ugadi / Gudi Padwa / Chaitra Navratri,ugadi,0,2027-04-08,2027-04-08,2027-04-08,projected,may be Apr 7
+Rama Navami,rama_navami,0,2025-04-06,2025-04-06,2025-04-06,confirmed,
+Rama Navami,rama_navami,0,2026-03-26,2026-03-26,2026-03-26,confirmed,
+Rama Navami,rama_navami,0,2027-04-15,2027-04-15,2027-04-15,projected,may be Apr 14
+Vaisakhi / Vishu / Tamil New Year,vaisakhi,0,2025-04-14,2025-04-14,2025-04-14,confirmed,
+Vaisakhi / Vishu / Tamil New Year,vaisakhi,0,2026-04-14,2026-04-14,2026-04-14,confirmed,some calendars list Apr 13
+Vaisakhi / Vishu / Tamil New Year,vaisakhi,0,2027-04-14,2027-04-14,2027-04-14,projected,
+Akshaya Tritiya,akshaya_tritiya,0,2025-04-30,2025-04-30,2025-04-30,unverified,from memory; check before relying on it
+Akshaya Tritiya,akshaya_tritiya,0,2026-04-19,2026-04-19,2026-04-19,confirmed,
+Akshaya Tritiya,akshaya_tritiya,0,2027-05-08,2027-05-08,2027-05-08,projected,

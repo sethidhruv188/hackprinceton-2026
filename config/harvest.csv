@@ -1,0 +1,6 @@
+rule_id,category,match,exclude,order_months,arrival_months,cover_months,confirmed,note
+rice,rice_flour,"\brice\b|basmati|masoori|\bsella\b","flour|powder|podi|poha|mamra|murmura|papad|\bmix\b|vermicelli|noodle|rava|sooji|cake|bran|puff|flake|idli|dosa|sevai|semiya|fried",Jan,Apr-May,12,yes,owner: rice is bought once a year after the harvest
+mango_pulp,,mango pulp|mango pupl,,,,12,no,candidate: is this an annual buy? which months?
+chilli,spices,\bchil+i\b|\bchillies\b,pickle|sauce|chips|khichiya|curd,,,12,no,candidate: is this an annual buy? which months?
+turmeric,spices,turmeric,,,,12,no,candidate: is this an annual buy? which months?
+cumin,spices,cumin|jeera,,,,12,no,candidate: is this an annual buy? which months?

@@ -49,8 +49,8 @@ def recommend(panel, clean, products, stock, fc):
                 reasons.append(f"~{at_risk:.0f} units may expire by {exp}: consider a discount")
 
         order = max(0.0, need + safety - sellable)
-        max_stock = p50_next * p.shelf_life_days / 30 + safety
-        if order + sellable > max_stock:
+        max_stock = p50_next * p.shelf_life_days / 30 + safety if pd.notna(p.shelf_life_days) else np.inf
+        if order + sellable > max_stock:  # only when a real shelf life is known
             order = max(0.0, max_stock - sellable)
             reasons.append(f"capped by {p.shelf_life_days}-day shelf life")
         avg_order = max(0.0, avg.get(p.product_id, 0) * cover - on_hand)
