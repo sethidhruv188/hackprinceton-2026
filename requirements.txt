@@ -2,3 +2,9 @@ pandas>=2.2
 numpy>=1.26
 lightgbm>=4.3
 holidays>=0.50
+photonhq-api
+python-socketio[asyncio_client]==5.18.1
+aiohttp
+python-dotenv
+langchain-aws
+boto3
