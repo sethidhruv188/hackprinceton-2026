@@ -186,12 +186,16 @@ def build_features(df, products, h=1):
     return d
 
 
-def train(clean, products, powers=(1.3,), quantiles=(0.5, 0.9), h=1):
+DEFAULT_PARAMS = dict(n_estimators=300, learning_rate=0.05, num_leaves=15, min_child_samples=10, verbose=-1)
+SIMPLE_PARAMS = dict(DEFAULT_PARAMS, num_leaves=7, min_child_samples=50, reg_lambda=1.0)   # candidate "simpler ML"
+
+
+def train(clean, products, powers=(1.3,), quantiles=(0.5, 0.9), h=1, params=None):
     """Fit the horizon-h models on one feature build. `clean` may carry `spike` (feature input) and
     `target_cap` (training target is min(demand, target_cap): variant B caps one-off spikes).
     Returns {"mean_1.3": ..., "p50": ..., "p90": ...}."""
     X, y, y_mean, w = training_rows(clean, products, h)
-    params = dict(n_estimators=300, learning_rate=0.05, num_leaves=15, min_child_samples=10, verbose=-1)
+    params = dict(params or DEFAULT_PARAMS)
     models = {}
     for q in quantiles:
         models[f"p{int(q * 100)}"] = lgb.LGBMRegressor(objective="quantile", alpha=q, **params).fit(X, y, sample_weight=w)

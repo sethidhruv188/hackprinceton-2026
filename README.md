@@ -15,7 +15,7 @@ python run.py --source real --ingest --today 2026-11-14     # rebuild data/ from
 python -m pytest tests                                      # tests (fake data only)
 ```
 
-Options: `--baseline-months 6`, `--sim-from 2025-10`, `--cushion-months 2`, `--cover-months 2`,
+Options: `--retest` (re-run the forecaster test and update the choice), `--baseline-months 6`, `--sim-from 2025-12`, `--cushion-months 2`, `--cover-months 2`,
 `--seed 7`, `--power 1.5`, `--[no-]cap-one-off`, `--fill-gaps`, `--plan-months 12`, `--use-stock`.
 
 The model learns each product's behaviour from its own sales first; festivals are not assumed to
@@ -112,6 +112,36 @@ Brands and brand orders (written by `run.py`, or `python -m inventory.brand_orde
 Checks: `python -m pytest tests` (includes every API endpoint on synthetic data);
 `cd web && npm run build`; with the dashboard running, `cd web && npm run smoke` clicks through every
 page in the locally installed Chrome (puppeteer-core, no browser download) at desktop and phone width.
+
+## Which forecast feeds the ordering rule (chosen by data)
+
+`python -m inventory.tournament` (or `python run.py --retest`, which also rebuilds the simulation
+forecasts on the latest data; meant to be run monthly) compares these forecasters, every one using
+data through M-5 for month M:
+
+| Candidate | What it is |
+| --- | --- |
+| `avg` | average of the last 6 months (the business today) |
+| `ml` | the LightGBM Tweedie model on all demand |
+| `ml_regular` | the same model trained on regular demand, plus the product's typical large-order cases per month |
+| `ml_simple` | a simpler model (7 leaves, 50 rows per leaf, L2 1.0) on the better of the two above |
+| `seasonal` | same month last year x (last 6 months / same months a year earlier), capped 0.5-2x |
+| `blend_w` | w x best model + (1 - w) x `avg`, w = 0.25, 0.5, 0.75 |
+| `blend3` | equal mix of best model, `avg` and `seasonal` |
+
+**Large orders** (`inventory/large_orders.py`): an invoice line larger than 3x the product's median line
+and more than 20 cases, judged only from lines before the decision. Regular demand = sales without them;
+the ordering rule adds back the product's average large-order cases per month (last 12 months), so stock
+still covers bulk orders. `outputs/large_orders.csv` lists the last 12 months of them for the agent to
+ask about upcoming bulk orders. (`data/order_lines.csv` keeps the invoice lines in current-code cases.)
+
+**Fair test**: the carry-over simulation at cushions 1-4 (cover 2, lead time 105-130 days, seed 7, same
+starting stock). Each candidate's fill rate is read at the same average stock (what `avg` holds at
+cushion 3). The winner is picked on Apr-Jul 2026 and must also beat `avg` on Aug-Oct 2026, otherwise
+`avg` is used. Results: `outputs/forecaster_tournament.{json,csv}`, curves in `forecaster_curves.csv`;
+the choice is written to `config/forecaster.txt`, which `run.py` uses for the plan, reorder points,
+brand orders and the dashboard. Expensive candidate forecasts are checkpointed in
+`outputs/tournament_cache_*.csv` (delete them to rebuild).
 
 ## Stock, containers and harvest buys
 

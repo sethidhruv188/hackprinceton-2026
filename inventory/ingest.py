@@ -284,6 +284,16 @@ def build_sales(d):
     return s.sort_values(["product_id", "month"]).reset_index(drop=True), returns_heavy
 
 
+def order_lines(d, item_map):
+    """Invoice lines in current-code cases: date, product_id, raw_item, cases (returns kept, negative).
+    Used to separate large (bulk) orders from regular demand."""
+    im = item_map.set_index("raw_item")
+    out = d[["date", "raw_item"]].copy()
+    out["product_id"] = d["raw_item"].map(im["product_id"])
+    out["cases"] = (d["qty"] * d["raw_item"].map(im["qty_to_cases"]) * d["raw_item"].map(im["to_current_cases"])).round(4)
+    return out.dropna(subset=["product_id"])
+
+
 def monthly_volume(d):
     """Total volume per month: raw cases, current-code cases and kg (where the name parses)."""
     m = d.assign(month=d["date"].dt.to_period("M"))
@@ -318,6 +328,7 @@ def run(raw_dir="data/raw/sales", out_dir="data", overrides="data/raw/product_ov
     products.to_csv(out / "products.csv", index=False)
     item_map.to_csv(out / "item_map.csv", index=False)
     volume.to_csv(out / "monthly_volume.csv")
+    order_lines(d, item_map).to_csv(out / "order_lines.csv", index=False)
 
     months = pd.to_datetime(sales["month"])
     merged = item_map[item_map["merged"]]

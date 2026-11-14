@@ -14,6 +14,64 @@ function Row({ label, r }) {
   );
 }
 
+const NAMES = {
+  avg: "the average of the last 6 months (what you do today)",
+  ml: "our forecasting model",
+  ml_regular: "our model, with large bulk orders handled separately",
+  ml_simple: "a simpler version of our model",
+  seasonal: "the same month last year, adjusted for recent growth",
+  blend3: "an equal mix of our model, the 6-month average and last year's pattern",
+};
+function nameOf(c, t) {
+  if (c.startsWith("blend_")) {
+    const w = Number(c.split("_")[1]);
+    return `a mix: ${Math.round(w * 100)}% ${NAMES[t.best_ml] || "model"} and ${Math.round((1 - w) * 100)}% the 6-month average`;
+  }
+  return NAMES[c] || c;
+}
+
+function Tournament({ t }) {
+  const rows = Object.entries(t.table);
+  const fmt = (v) => (v == null ? "-" : pct(v));
+  const pts = (v) => (v == null ? "-" : `${v > 0 ? "+" : ""}${v.toFixed(1)} points`);
+  return (
+    <section>
+      <h2>Which forecast we use</h2>
+      <p style={{ fontSize: "1.1rem" }}>
+        We use <strong>{nameOf(t.chosen, t)}</strong>. We tried {rows.length} ways of forecasting and replayed your ordering
+        with each one, comparing how much of your sales each could ship <strong>while holding the same amount of stock</strong>.
+        We picked the best on April to July 2026 ({nameOf(t.winner_apr_jul, t)}) and then checked it on August to October 2026,
+        which it had not seen. {t.confirmed_aug_oct
+          ? "It still did better there, so we use it."
+          : "It did not beat the 6-month average there, so we stay with the 6-month average."}
+        {" "}This test is re-run every month as new sales come in (<code>python run.py --retest</code>), and the choice is updated.
+      </p>
+      <div className="table-wrapper" tabIndex={0} role="region" aria-labelledby="t-cap">
+        <table>
+          <caption id="t-cap">Compared with the 6-month average at the same amount of stock (percentage points of sales shipped)</caption>
+          <thead><tr><th scope="col">Way of forecasting</th><th scope="col" className="num">Apr-Jul 2026 (used to pick)</th>
+            <th scope="col" className="num">Aug-Oct 2026 (check)</th><th scope="col" className="num">Month before Diwali (share shipped)</th>
+            <th scope="col" className="num">Stock held (Aug-Oct)</th></tr></thead>
+          <tbody>
+            {rows.map(([c, r]) => (
+              <tr key={c} className={c === t.chosen ? undefined : undefined}>
+                <th scope="row">{nameOf(c, t)}{c === t.chosen && <span className="tag harvest">used</span>}</th>
+                <td className="num" data-label="Apr-Jul">{pts(r.points_vs_avg_apr_jul)}</td>
+                <td className="num" data-label="Aug-Oct">{pts(r.points_vs_avg_aug_oct)}</td>
+                <td className="num" data-label="Month before Diwali">{fmt(r.fill_pre_diwali_cushion3)}</td>
+                <td className="num" data-label="Stock held">{r.avg_stock_cushion3_aug_oct != null ? cases(r.avg_stock_cushion3_aug_oct, false) : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted">"+1.0 points" means it shipped 1% more of your sales than the 6-month average while holding the same stock.
+        "-" means it never held a comparable amount of stock in the replay, so there is no fair comparison.
+        The month-before-Diwali and stock columns use the normal 3-month rule.</p>
+    </section>
+  );
+}
+
 export default function Quality() {
   const { data, error, loading } = useData("/forecast-quality");
   if (error) return <ErrorBox error={error} />;
@@ -52,6 +110,7 @@ export default function Quality() {
       </div>
       <p className="muted">Both start from the same stock. Sales that found no stock are counted as lost. Months before the first
         replayed order could arrive are left out, because both ways are identical then.</p>
+      {data.tournament && <Tournament t={data.tournament} />}
     </div>
   );
 }

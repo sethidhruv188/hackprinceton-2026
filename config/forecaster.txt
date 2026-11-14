@@ -1,0 +1,4 @@
+blend_0.5
+weight=0.5
+best_ml=ml_regular
+# chosen 2026-11-14: Apr-Jul winner = blend_0.5; beats averaging on Aug-Oct = True

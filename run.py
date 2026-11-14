@@ -21,6 +21,7 @@ import pandas as pd
 import json
 
 from inventory import schema, synthetic, ingest, gaps, forecast, backtest, plan, checks, spikes, policy, simulate, brand_orders
+from inventory import tournament, large_orders
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--source", choices=["real", "synthetic"], default="real")
@@ -45,6 +46,8 @@ ap.add_argument("--cover-months", type=float, default=policy.COVER_MONTHS)
 ap.add_argument("--seed", type=int, default=7, help="seed for simulated lead times")
 ap.add_argument("--fill-gaps", action=argparse.BooleanOptionalAction, default=False,
                 help="also fill NEW gaps detected after the confirmed holds are recorded (default off: unconfirmed)")
+ap.add_argument("--retest", action="store_true",
+                help="re-run the forecaster tournament on the current data (fresh simulation) and update config/forecaster.txt")
 ap.add_argument("--use-stock", action=argparse.BooleanOptionalAction, default=None,
                 help="order against stock (default: on when data/stock.csv exists)")
 ap.add_argument("--inventory", default="data/raw/Inventory/CurrentInventory.xlsx",
@@ -118,6 +121,8 @@ sim_months = [m for m in months if m >= pd.Timestamp(a.sim_from)]
 n_ahead = max(len(pd.date_range(D, D + pd.Timedelta(days=policy.horizon_days(3, a.cover_months)), freq="MS"))
               for D in sim_months)                                              # enough for cushion 3
 saved_paths = OUT / "sim_forecast_paths.csv"
+if a.retest:
+    a.skip_sim = False          # the re-test needs fresh simulation forecasts on the new data
 if a.skip_sim and saved_paths.exists():
     paths = pd.read_csv(saved_paths, dtype={"product_id": str}, parse_dates=["decision", "month"])
     say("3. Simulation forecasts", f"reused {saved_paths} (--skip-sim): the simulation forecasts were not retrained")
@@ -215,6 +220,25 @@ say("5. Final model", f"trained on {clean['month'].min():%Y-%m}..{clean['month']
 # ---------- plans ----------
 today = pd.Timestamp(a.today) if a.today else pd.Timestamp.today().normalize()
 fc = forecast.forecast_months(clean, products, models_by_h, driver=f"mean_{a.power}")
+lines_path = Path(a.data) / "order_lines.csv"
+if a.retest and a.source == "real" and lines_path.exists():
+    print("\n== Re-testing the forecasters (inventory/tournament.py) ==", flush=True)
+    res_t, tab_t = tournament.run(a.data, OUT, a.lead_gap, log=lambda m: print(m, flush=True))
+    say("Forecaster re-test", tab_t.round(2))
+choice = tournament.read_choice() if a.source == "real" else dict(name="ml", weight=None, best_ml="ml")
+if choice["name"] != "ml":
+    ff = tournament.final_forecast(choice, panel, products, fc, item_map,
+                                   large_orders.load_lines(lines_path) if lines_path.exists() else None, a.plan_months, a.power,
+                                   log=lambda m: None)
+    lk = ff.set_index(["product_id", "month"])["likely"]
+    fc["mean"] = [lk.get((p_, m_), 0.0) for p_, m_ in zip(fc["product_id"], fc["month"])]
+    fc[f"mean_{a.power}"] = fc["mean"]
+say("Forecaster", f"forecast used for ordering: {choice['name']}" + (f" (weight {choice['weight']:g} on {choice['best_ml']})"
+    if choice["weight"] is not None else "") + " (config/forecaster.txt)")
+if a.source == "real" and lines_path.exists():
+    lo = large_orders.report(large_orders.load_lines(lines_path), products, brand_orders.B.assign(products))
+    lo.to_csv(OUT / "large_orders.csv", index=False)
+    say("Large orders", f"{len(lo)} large lines in the last 12 months -> outputs/large_orders.csv")
 fc[["product_id", "month", "mean", "p90"]].rename(columns={"mean": "likely", "p90": "high"}).assign(
     month=fc["month"].dt.strftime("%Y-%m"), likely=fc["mean"].round(2), high=np.maximum(fc["p90"], fc["mean"]).round(2)
 ).to_csv(OUT / "forecast.csv", index=False)

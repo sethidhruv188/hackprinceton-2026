@@ -483,4 +483,7 @@ def forecast_quality():
     p = out_dir() / "simulation_summary.json"
     if not p.exists():
         raise HTTPException(503, "simulation_summary.json not found: run `python run.py`")
-    return clean(json.loads(p.read_text()))     # older files may hold NaN
+    data = clean(json.loads(p.read_text()))     # older files may hold NaN
+    t = out_dir() / "forecaster_tournament.json"
+    data["tournament"] = clean(json.loads(t.read_text())) if t.exists() else None
+    return data
