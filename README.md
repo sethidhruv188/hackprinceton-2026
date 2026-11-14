@@ -162,6 +162,13 @@ When `data/raw/Inventory/CurrentInventory.xlsx` exists, `run.py` rebuilds `data/
   = + 2 months. Per product: "order now: N cases", "OK until <date>", "on hold: confirm release", or
   "below 3-month floor before restock: expedite or air-ship" with the date it dips below
   (`outputs/product_status.csv`, projection with the floor in `outputs/stock_projection.csv`).
+- **Order quantity (owner's rule)**: forecast sales for the 3 calendar months after the order arrives,
+  minus the stock expected at arrival (on hand + on order - forecast until arrival, floored at 0); whole
+  cases, floored at 0. Sales during the ~130 days of shipping are not added (the lead time only sets the
+  dates). "Next order by" = arrival + 3 months - 130 days. A product that runs out before the order lands
+  gets the note "runs out around <date> before this order arrives" (not added to the quantity).
+  Container pull-forward never takes a product above 4 months of stock after arrival. The reorder point
+  (130 days + 3 months) still decides WHEN to order; rice/harvest buys keep their own annual rule.
 - **3-month floor**: at any date, the forecast of the next 3 months from that date (Diwali months count
   higher, not a flat average). Stock is projected week by week (on hand - held + on-order arrivals, on
   their date or after the 130-day lead time - forecast sales) until a new order could arrive; products

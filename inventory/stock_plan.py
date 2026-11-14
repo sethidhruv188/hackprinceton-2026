@@ -171,6 +171,30 @@ def stock_on_shelf(stock, pids, today, lead_days=policy.LEAD_DAYS):
     return shelf, on_order, arrival
 
 
+LASTS_MONTHS = 3          # owner: an order should last about 3 months after it arrives
+PULL_MAX_MONTHS = 4       # container pull-forward may not push a product above 4 months after arrival
+
+
+def owner_quantity(F, starts, positions, when, lead_days=policy.LEAD_DAYS, lasts_months=LASTS_MONTHS):
+    """Owner's rule, per row of F: quantity = forecast for `lasts_months` after arrival minus the stock
+    expected at arrival (position - forecast until arrival, floored at 0); whole cases, floored at 0.
+    Sales during shipping are NOT added (the lead time only sets the dates). Returns dict with qty,
+    stock_at_arrival, arrival, next_order_by (arrival + lasts_months - lead time) and runs_out (the
+    first week stock reaches 0 before arrival, else None)."""
+    when = pd.Timestamp(when).normalize()
+    pos = np.asarray(positions, float)
+    arrival = when + pd.Timedelta(days=lead_days)
+    left = np.maximum(0.0, pos - policy.demand_over(F, starts, when, lead_days))
+    need = policy.demand_over(F, starts, arrival, (arrival + pd.DateOffset(months=lasts_months) - arrival).days)  # calendar months
+    qty = np.maximum(0.0, np.ceil(np.round(need - left, 6)))
+    runs = np.full(len(pos), None, dtype=object)
+    for d in range(0, lead_days + 1, 7):
+        hit = (pos - policy.demand_over(F, starts, when, d) <= 0) & (runs == None)  # noqa: E711
+        runs[hit] = when + pd.Timedelta(days=d)
+    nxt = arrival + pd.DateOffset(months=lasts_months) - pd.Timedelta(days=lead_days)
+    return dict(qty=qty, stock_at_arrival=left, arrival=arrival, next_order_by=nxt, runs_out=runs, need=need)
+
+
 def floor_check(F, starts, pids, stock, today, floor_months=FLOOR_MONTHS, lead_days=policy.LEAD_DAYS, step_days=7):
     """Weekly from today until a new order could arrive: projected stock vs. the forecast of the next
     floor_months. Returns dict(floor_now, below_now, dip_date per product)."""
@@ -199,7 +223,8 @@ def product_status(F, starts, pids, stock, holds, harvest_ids, today, cushion_mo
     held = s["held_cases"].fillna(0).to_numpy(float)
     pos = on_hand + on_order - held
     lv = policy.levels(F, starts, today, cushion_months, cover_months)
-    qty = policy.order_quantity(pos, lv["reorder_point"], lv["order_up_to"])
+    oq = owner_quantity(F, starts, pos, today)
+    qty = np.where(pos < lv["reorder_point"], oq["qty"], 0.0)          # trigger: reorder point; size: owner's rule
     until = np.full(len(pids), None, dtype=object)
     for w in range(1, weeks + 1):
         day = today + pd.Timedelta(days=7 * w)

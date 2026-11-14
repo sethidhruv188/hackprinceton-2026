@@ -150,3 +150,19 @@ def test_floor_uses_forward_forecast_and_flags_dip_before_restock():
     assert pd.isna(st.loc["SAFE", "floor_dip_date"]) and pd.notna(st.loc["DIP", "floor_dip_date"])
     proj = SP.projection(F, starts, pids, st.reset_index(), "2026-11-14", stock=stock)
     assert "floor_3_months" in proj and (proj["floor_3_months"] > 0).all()
+
+
+
+def test_owner_rule_runs_out_before_arrival():
+    """99 on hand, 200 a month, runs out before the order lands: order = 3 months after arrival = 600;
+    shipping-time sales are not added, and the run-out is a separate note."""
+    months = pd.date_range("2026-10-01", periods=12, freq="MS")
+    F, starts = np.array([[200.0] * 12]), months
+    when = pd.Timestamp("2027-03-01") - pd.Timedelta(days=policy.LEAD_DAYS)           # arrives Mar 1, 2027
+    oq = SP.owner_quantity(F, starts, [99.0], when)
+    assert oq["arrival"] == pd.Timestamp("2027-03-01")
+    assert oq["stock_at_arrival"][0] == 0.0 and oq["qty"][0] == 600
+    assert oq["runs_out"][0] is not None and oq["runs_out"][0] < oq["arrival"]
+    assert oq["next_order_by"] == pd.Timestamp("2027-06-01") - pd.Timedelta(days=policy.LEAD_DAYS)
+    rich = SP.owner_quantity(F, starts, [5000.0], when)                                  # plenty left at arrival
+    assert rich["qty"][0] == 0

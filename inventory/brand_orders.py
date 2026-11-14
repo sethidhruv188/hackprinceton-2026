@@ -142,9 +142,9 @@ def current_holds(panel):
     return set(panel.loc[(panel["month"] == last) & (panel["status"] == "fda_hold"), "product_id"])
 
 
-STOCK_ORDER_EXTRA = ["kind", "on_hand_cases", "months_of_cover", "cbm", "containers", "containers_needed",
+STOCK_ORDER_EXTRA = ["kind", "next_order_by", "runs_out_before_arrival", "on_hand_cases", "months_of_cover", "cbm", "containers", "containers_needed",
                      "last_container_fill_pct", "container_bound", "pulled_forward_cases", "cbm_estimated_pct", "warning"]
-STOCK_LINE_EXTRA = ["on_hand_cases", "position", "reorder_point", "cbm", "cbm_source", "pulled_forward", "harvest"]
+STOCK_LINE_EXTRA = ["stock_at_arrival", "runs_out_before_arrival", "on_hand_cases", "position", "reorder_point", "cbm", "cbm_source", "pulled_forward", "harvest"]
 NO_ON_ORDER = "stock already ordered or at sea is not included; check before ordering."
 
 
@@ -186,13 +186,15 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
     orders, lines = [], []
 
     def top_up_at(pid_list, when):
-        """Cases to bring each product to its order-up-to level at `when` (projected position)."""
+        """Owner's rule at `when`: 3 months of forecast after arrival minus stock left at arrival.
+        Returns (qty, reorder point, owner_quantity details)."""
         rows = [idx[p] for p in pid_list]
         Fi = F[rows]
         days = max(0, (when - today).days)
         lv = policy.levels(Fi, starts, when, cushion_months, cover_months)
         proj_pos = np.array([positions[p] for p in pid_list]) - policy.demand_over(Fi, starts, today, days)
-        return np.maximum(0, np.ceil(np.round(lv["order_up_to"] - proj_pos, 6))), lv["reorder_point"]
+        oq = SP.owner_quantity(Fi, starts, proj_pos, when)
+        return oq["qty"], lv["reorder_point"], oq
 
     for brand, g in st.groupby("brand"):
         regular = g[~g["product_id"].isin(holds) & ~g["product_id"].isin(set(members))]
@@ -208,16 +210,20 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
             continue
         horizon = when + pd.Timedelta(days=INCLUDE_WITHIN_DAYS)
         inc = regular[(regular["order_now_cases"] > 0) | (okd <= horizon)]
-        qty, rop = top_up_at(list(inc["product_id"]), when)
+        qty, rop, oq = top_up_at(list(inc["product_id"]), when)
         rows = []
-        for (r, q, rp) in zip(inc.itertuples(), qty, rop):
+        for k, (r, q, rp) in enumerate(zip(inc.itertuples(), qty, rop)):
             if q <= 0:
                 continue
+            ro = oq["runs_out"][k]
+            run_note = f"runs out around {ro:%b %d, %Y} before this order arrives" if ro is not None else ""
             why = ("at or below its reorder point now" if r.order_now_cases > 0 and when == today else
                    f"reaches its reorder point by {pd.Timestamp(r.ok_until):%b %d, %Y}")
             rows.append(dict(product_id=r.product_id, cases=int(q), on_hand_cases=r.on_hand_cases, position=r.position,
                              reorder_point=round(float(rp), 1), on_hold=False, pulled_forward=False, harvest=False,
-                             note="", reason=why))
+                             note=run_note, reason=why + "; lasts about 3 months after arrival",
+                             stock_at_arrival=round(float(oq["stock_at_arrival"][k]), 1),
+                             runs_out_before_arrival=f"{ro:%Y-%m-%d}" if ro is not None else None))
         # harvest products of this brand whose order window contains this order date ride along
         hv = harvest[harvest["product_id"].isin(g["product_id"])] if len(harvest) else harvest
         ride = hv[(pd.to_datetime(hv["order_from"]) <= when) & (when <= pd.to_datetime(hv["order_by"]))] if len(hv) else hv
@@ -237,7 +243,13 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
         # pull-forward candidates: the brand's other regular products, earliest reorder date first
         rest = regular.assign(ok=okd)                      # assign first: assigning to an empty frame adds ghost rows
         rest = rest[~rest["product_id"].isin(counted["product_id"])].sort_values("ok")
-        cq, _ = top_up_at(list(rest["product_id"]), today) if len(rest) else (np.array([]), None)
+        if len(rest):
+            cq, _, oq_r = top_up_at(list(rest["product_id"]), when)
+            cap = np.floor(policy.demand_over(F[[idx[p] for p in rest["product_id"]]], starts, oq_r["arrival"],
+                                              SP.PULL_MAX_MONTHS * policy.DAYS_PER_MONTH) - oq_r["stock_at_arrival"])
+            cq = np.minimum(cq, np.maximum(cap, 0))          # never above 4 months of stock after arrival
+        else:
+            cq = np.array([])
         cand = rest.assign(cases=cq).merge(pinfo, on="product_id", how="left").merge(cbm, on="product_id", how="left")
         cand = cand[cand["cases"] > 0].rename(columns={"case_weight_kg": "kg_per_case"})
         cand["needed_by"] = cand["ok_until"]
@@ -248,13 +260,17 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
             rows_i = [idx[p] for p in inc_ids]
             span = policy.LEAD_DAYS + (cushion_months + cover_months) * policy.DAYS_PER_MONTH
             nxt_start = when + pd.Timedelta(days=span)
-            nq = np.ceil(np.round(policy.demand_over(F[rows_i], starts, nxt_start, cover_months * policy.DAYS_PER_MONTH), 6))
+            arrival = when + pd.Timedelta(days=policy.LEAD_DAYS)
+            four = policy.demand_over(F[rows_i], starts, arrival, SP.PULL_MAX_MONTHS * policy.DAYS_PER_MONTH)
+            have = counted.set_index("product_id").reindex(inc_ids)
+            left = have["stock_at_arrival"].fillna(0).to_numpy(float) if "stock_at_arrival" in have else np.zeros(len(inc_ids))
+            nq = np.maximum(0, np.floor(four - left - have["cases"].fillna(0).to_numpy(float)))   # up to 4 months, no more
             urg = st.set_index("product_id").loc[inc_ids]
             t2 = pd.DataFrame({"product_id": inc_ids, "cases": nq,
                                "urgency": (urg["position"] / urg["reorder_point"].where(urg["reorder_point"] > 0)).to_numpy()})
             t2 = t2.merge(pinfo, on="product_id", how="left").merge(cbm, on="product_id", how="left")
             t2 = t2.rename(columns={"case_weight_kg": "kg_per_case"}).sort_values("urgency")
-            t2["needed_by"] = f"{nxt_start:%Y-%m-%d} (its next order)"
+            t2["needed_by"] = "its next order (capped at 4 months of stock after arrival)"
             cand = pd.concat([cand, t2[t2["cases"] > 0]], ignore_index=True)
         summary, pulled = SP.pack(counted, cand[["product_id", "cases", "kg_per_case", "cbm_per_case", "needed_by"]], cfg)
         if len(pulled):
@@ -269,7 +285,10 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
         oid = f"{brand}|{when:%Y-%m-%d}"
         arrival = when + pd.Timedelta(days=policy.LEAD_DAYS)
         latest = when + pd.Timedelta(days=policy.LEAD_DAYS - 105)
+        nob = arrival + pd.DateOffset(months=SP.LASTS_MONTHS) - pd.Timedelta(days=policy.LEAD_DAYS)
+        n_run = int(l["runs_out_before_arrival"].notna().sum()) if "runs_out_before_arrival" in l else 0
         orders.append(dict(order_id=oid, brand=brand, kind="regular", covers=f"arrives by {arrival:%b %d, %Y}",
+                           next_order_by=f"{nob:%Y-%m-%d}", runs_out_before_arrival=n_run,
                            first_month=f"{when:%Y-%m}", last_month=f"{arrival:%Y-%m}", order_by_safe=f"{when:%Y-%m-%d}",
                            order_by_latest=f"{latest:%Y-%m-%d}", days_to_order_by=(when - today).days,
                            status="Order now" if when == today else status(today, when, latest),

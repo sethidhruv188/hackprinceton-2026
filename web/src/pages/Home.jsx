@@ -96,6 +96,7 @@ export default function Home() {
               {o.order_by_safe < today && <div className="muted">The safe date ({niceDate(o.order_by_safe, today, { relative: false })}) has passed; ordering by the latest date only works if shipping is quick.</div>}
               <div className="amounts"><strong>{cases(o.cases)}</strong> · {weight(o.kg)}{o.cbm == null && o.containers != null ? ` · about ${o.containers} containers` : ""}</div>
               {o.cbm != null && <div><ContainerLine o={o} /></div>}
+              {o.next_order_by && <div className="muted">Lasts about 3 months after it arrives; next order by {niceDate(o.next_order_by, today)}</div>}
               {o.pulled_forward_cases > 0 && <div className="muted">Includes {cases(o.pulled_forward_cases)} pulled forward to fill the last container</div>}
               {(b.below_floor_now > 0 || b.below_floor_soon > 0) && (
                 <div className="badge late" style={{ whiteSpace: "normal" }}>⚠ {b.below_floor_now} product(s) below 3 months of stock now

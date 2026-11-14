@@ -18,12 +18,13 @@ function OrderTable({ order, today, brand, stockUsed }) {
         <div className="muted">{l.product_id}
           {l.on_hold ? " · on hold: confirm release before ordering" : ""}
           {l.pulled_forward && <span className="tag pulled">pulled forward</span>}
+          {l.runs_out_before_arrival && !l.on_hold && <div style={{ color: "var(--now-fg)" }}>{l.note}</div>}
           {l.harvest && <span className="tag harvest">annual harvest buy</span>}
           {l.floor_dip_date && !l.on_hold && <span className="tag pulled" style={{ background: "var(--late-bg)", color: "var(--late-fg)" }}>
             {l.floor_dip_date <= today ? "below 3 months of stock now" : `below 3 months of stock from ${niceDate(l.floor_dip_date, today, { relative: false })}`}: expedite or air-ship</span>}
         </div></th>
       {stockUsed && <td className="num" data-label="On hand">{l.on_hand_cases != null ? cases(l.on_hand_cases, false) : "-"}</td>}
-      <td className="num" data-label="Cases to order">{l.on_hold ? <s>{cases(l.cases, false)}</s> : cases(l.cases, false)}</td>
+      <td className="num" data-label="Cases to order (lasts about 3 months after arrival)">{l.on_hold ? <s>{cases(l.cases, false)}</s> : cases(l.cases, false)}</td>
       <td className="num" data-label="Weight">{weight(l.kg)}</td>
       {stockUsed && <td className="num" data-label="Volume">{l.cbm != null ? `${l.cbm.toFixed(2)} CBM` : "size unknown"}
         {l.cbm_source === "estimated from weight" && <span className="tag">estimated</span>}</td>}
@@ -43,6 +44,8 @@ function OrderTable({ order, today, brand, stockUsed }) {
           {order.kind !== "harvest" && (order.order_by_safe < today
             ? <div className="muted">Safe date {niceDate(order.order_by_safe, today, { relative: false })} has passed.</div>
             : <div className="muted">Latest possible: {niceDate(order.order_by_latest, today)}</div>)}
+          {order.next_order_by && <div className="muted">Next order by {niceDate(order.next_order_by, today)}, so it lands as this one runs out</div>}
+          {order.runs_out_before_arrival > 0 && <div style={{ color: "var(--now-fg)" }}>{order.runs_out_before_arrival} product(s) run out before this order arrives (not added to the order)</div>}
         </div>
         <div>
           <strong>{cases(order.cases)}</strong> · {weight(order.kg)}
@@ -61,7 +64,7 @@ function OrderTable({ order, today, brand, stockUsed }) {
           <caption id={`${id}-c`}>{brand}: {order.kind === "harvest" ? "annual harvest order" : order.covers.startsWith("arrives") ? `order ${order.covers.replace("arrives", "arriving")}` : `order covering ${order.covers}`}</caption>
           <thead>
             <tr><th scope="col">Product</th>{stockUsed && <th scope="col" className="num">On hand</th>}
-              <th scope="col" className="num">Cases to order</th><th scope="col" className="num">Weight</th>
+              <th scope="col" className="num">Cases to order (lasts about 3 months after arrival)</th><th scope="col" className="num">Weight</th>
               {stockUsed && <th scope="col" className="num">Volume</th>}<th scope="col">Why</th></tr>
           </thead>
           <tbody>{[...live, ...pulled, ...held].map(row)}</tbody>
