@@ -69,8 +69,9 @@ def containers_config(path=ROOT / "config" / "containers.csv"):
                 max_kg=None if pd.isna(max_kg) else float(max_kg))
 
 
-def cbm_table(products, stock=None, densities_path=ROOT / "config" / "densities.csv", overrides_path=None):
-    """product_id, cbm_per_case, cbm_source."""
+def cbm_table(products, stock=None, densities_path=ROOT / "config" / "densities.csv", overrides_path=None, answers=None):
+    """product_id, cbm_per_case, cbm_source. Precedence: case_cbm.csv (overrides_path) > owner answers
+    ({product_id: cbm}) > inventory file > estimate from weight."""
     p = products[["product_id", "category", "case_weight_kg"]].copy()
     dens = pd.read_csv(densities_path).set_index("category")["kg_per_cbm"]
     est = p["case_weight_kg"] / p["category"].map(dens).fillna(dens.get("other", np.nan))
@@ -80,6 +81,10 @@ def cbm_table(products, stock=None, densities_path=ROOT / "config" / "densities.
         hit = p["product_id"].isin(inv.index)
         p.loc[hit, "cbm_per_case"] = p.loc[hit, "product_id"].map(inv)
         p.loc[hit, "cbm_source"] = "inventory file"
+    if answers:
+        hit = p["product_id"].isin(set(answers))
+        p.loc[hit, "cbm_per_case"] = p.loc[hit, "product_id"].map(answers)
+        p.loc[hit, "cbm_source"] = "owner answer"
     if overrides_path and Path(overrides_path).exists():
         o = pd.read_csv(overrides_path, dtype={"product_id": str}).dropna(subset=["cbm_per_case"]).set_index("product_id")["cbm_per_case"]
         hit = p["product_id"].isin(o.index)

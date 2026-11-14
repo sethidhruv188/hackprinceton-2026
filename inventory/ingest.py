@@ -145,9 +145,10 @@ def pack_signature(desc):
     return frozenset(float(n) for n in NUMBER.findall(desc))
 
 
-def build_item_map(d):
+def build_item_map(d, extra_merges=None):
     """Map each raw item code to a product_id and a factor that converts its cases into the
-    product's current cases.
+    product's current cases. extra_merges: {raw code: target code} the owner confirmed (owner answers),
+    applied after the rules below with merge_rule "owner answer".
 
     Rule 1 (owner): a code carrying an OLD marker whose stripped code exists as a current code
     is the SAME product. Always merged, whatever the pack size; its history is converted by
@@ -184,6 +185,13 @@ def build_item_map(d):
             else:
                 clusters.append((r.raw_item, r.sig))
                 mapping[r.raw_item] = r.raw_item
+    known = set(codes["raw_item"])
+    for raw, target in (extra_merges or {}).items():
+        if raw in known and target in known and raw != target:
+            mapping[raw], rule[raw] = mapping.get(target, target), "owner answer"
+            for k, v in list(mapping.items()):          # codes that pointed at raw follow it
+                if v == raw and k != raw:
+                    mapping[k] = mapping[raw]
     codes["product_id"] = codes["raw_item"].map(mapping)
     codes["merged"] = codes["product_id"] != codes["raw_item"]
     codes["merge_rule"] = codes["raw_item"].map(rule).fillna("")
@@ -311,12 +319,17 @@ def monthly_volume(d):
     return v.drop(columns="cases_with_weight").round(1)
 
 
-def run(raw_dir="data/raw/sales", out_dir="data", overrides="data/raw/product_overrides.csv"):
+def run(raw_dir="data/raw/sales", out_dir="data", overrides="data/raw/product_overrides.csv", answers=None):
+    """answers: inventory.answers.Answers (default: read <out_dir>/owner_answers.csv) for confirmed code merges."""
+    from . import answers as A
     out = Path(out_dir)
     out.mkdir(exist_ok=True)
     raw = read_raw(raw_dir)
     d, dropped = drop_non_products(raw)
-    item_map = build_item_map(d)
+    ans = A.ensure(answers, out)
+    merges = A.code_merges(ans, d["raw_item"].unique())
+    item_map = build_item_map(d, merges)
+    A.code_merges(ans, d["raw_item"].unique(), item_map.set_index("raw_item")["product_id"].to_dict())   # final status
     im = item_map.set_index("raw_item")
     d["product_id"] = d["raw_item"].map(im["product_id"])
     d["cases"] = d["qty"] * d["raw_item"].map(im["qty_to_cases"])          # own cases (lb-recorded bulk -> bags)

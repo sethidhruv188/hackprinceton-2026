@@ -98,14 +98,15 @@ def _profile_reason(pid, month, kind, spk_by, prof):
     return "no recurring spike in this month"
 
 
-def order_plan(panel, clean, products, fc, today, k_festival=None, k_normal=None, spikes=None, profiles=None):
+def order_plan(panel, clean, products, fc, today, k_festival=None, k_normal=None, spikes=None, profiles=None, keep=None):
     """fc: forecast long df with product_id, month, mean, p90. k_festival applies to Diwali and
-    pre-Diwali months, k_normal to all other months. Returns (order_plan, inactive)."""
+    pre-Diwali months, k_normal to all other months. keep: products never treated as inactive (holds the
+    owner released: no recent sales because they were on hold). Returns (order_plan, inactive)."""
     kf = K_FESTIVAL if k_festival is None else k_festival
     kn = K_NORMAL if k_normal is None else k_normal
     today = pd.Timestamp(today).normalize()
     prof = product_profile(panel)
-    inactive = prof[prof["recent_units"] <= 0].index
+    inactive = prof[(prof["recent_units"] <= 0) & ~prof.index.isin(set(keep or ()))].index
     imputed = clean[clean["imputed"]].groupby("product_id").size()
     spk_by = {}
     if spikes is not None and len(spikes):

@@ -21,7 +21,7 @@ import pandas as pd
 import json
 
 from inventory import schema, synthetic, ingest, gaps, forecast, backtest, plan, checks, spikes, policy, simulate, brand_orders
-from inventory import tournament, large_orders
+from inventory import tournament, large_orders, answers
 
 ROOT = Path(__file__).resolve().parent
 REAL_DIRS = {"data": "data", "out": "outputs", "models": "models"}            # the real business folders
@@ -103,14 +103,17 @@ def md(obj):
 # ---------- load and holds ----------
 if a.generate:
     print("synthetic data ->", synthetic.generate(a.data, allow_real=a.allow_overwrite_real_data))
-elif a.ingest:
+ans = answers.load(a.data)           # the owner's answers (data/owner_answers.csv), applied in memory below
+if a.ingest and not a.generate:
     print("== Ingest ==")
-    ingest.run(a.raw, a.data)
+    ingest.run(a.raw, a.data, answers=ans)
 hold = gaps.relabel_holds(a.data)
 panel, products, _ = schema.load(a.data)
 months = sorted(panel["month"].unique())
 im_path = Path(a.data) / "item_map.csv"
 item_map = pd.read_csv(im_path) if im_path.exists() else None
+if item_map is not None:
+    answers.code_merges(ans, item_map["raw_item"].astype(str), item_map.set_index("raw_item")["product_id"].to_dict())
 say("Data", f"{a.source}: {len(products)} products, {months[0]:%Y-%m} to {months[-1]:%Y-%m} ({len(months)} months); "
             f"baseline = average of last {a.baseline_months} months; decisions use data through M-{a.lead_gap + 1}")
 say("1. Holds", f"{hold['relabelled']} product-months in {hold['runs']} suspected gaps relabelled as fda_hold "
@@ -118,6 +121,8 @@ say("1. Holds", f"{hold['relabelled']} product-months in {hold['runs']} suspecte
                 f"products affected; {int(((panel['status'] == 'fda_hold') & (panel['month'] == months[-1])).sum())} on hold in "
                 f"{months[-1]:%Y-%m}. Hold months are filled (not zero demand) and not scored.")
 residual = gaps.detect_unflagged_gaps(panel)
+# owner answers: confirmed gaps become unavailable months; rejected ones are real zero sales (not asked again)
+panel, residual = answers.apply_gaps(panel, residual, ans)
 residual.to_csv(OUT / "suspected_gaps.csv", index=False)
 say("", f"after recording the holds, gap detection finds {len(residual)} further runs (they appear only because the "
         f"holds are now excluded from each product's history; not confirmed by the owner) -> outputs/suspected_gaps.csv; "
@@ -226,7 +231,9 @@ say("4. Secondary: single-month accuracy of the month-M forecast (data through M
 # ---------- final models ----------
 print(f"\n== 5. Training final direct models for horizons 1..{a.plan_months} ==", flush=True)
 clean["spike"] = spikes.spike_flags(clean, spk)
-final = clean.assign(target_cap=spikes.one_off_caps(clean, spk)) if a.cap_one_off else clean
+real = answers.real_one_offs(spk, ans)            # one-offs the owner says were real demand are not capped
+spk_caps = spk[[(p_, f"{m_:%Y-%m}") not in real for p_, m_ in zip(spk["product_id"], spk["month"])]] if real else spk
+final = clean.assign(target_cap=spikes.one_off_caps(clean, spk_caps)) if a.cap_one_off else clean
 models_by_h = {h: forecast.train(final, products, powers=[a.power], h=h) for h in range(1, a.plan_months + 1)}
 saved = forecast.save_models(models_by_h, a.models, clean, products, a.power,
                              extra=dict(baseline_months=a.baseline_months, lead_gap=a.lead_gap, one_off_capped=a.cap_one_off,
@@ -260,22 +267,15 @@ if a.source == "real" and lines_path.exists():
 fc[["product_id", "month", "mean", "p90"]].rename(columns={"mean": "likely", "p90": "high"}).assign(
     month=fc["month"].dt.strftime("%Y-%m"), likely=fc["mean"].round(2), high=np.maximum(fc["p90"], fc["mean"]).round(2)
 ).to_csv(OUT / "forecast.csv", index=False)
-op, inactive = plan.order_plan(panel, clean, products, fc, today, spikes=spk, profiles=prof)
+# owner answers: released holds come back into the plan; discontinued products leave it
+first_hold, released = answers.effective_holds(panel, ans)
+op, inactive = plan.order_plan(panel, clean, products, fc, today, spikes=spk, profiles=prof, keep=released)
+gone = answers.discontinued(ans, item_map.astype(str) if item_map is not None else None)
+op = op[~op["product_id"].isin(gone)].reset_index(drop=True)
 op.to_csv(OUT / "order_plan.csv", index=False)
 inactive.to_csv(OUT / "inactive_products.csv", index=False)
 fr = plan.festival_readiness(op, clean, today)
 fr.to_csv(OUT / "festival_readiness.csv", index=False)
-last_status = panel[panel["month"] == months[-1]].set_index("product_id")["status"]
-on_hold = last_status[last_status == "fda_hold"].index
-first_hold = {}
-for pid in on_hold:
-    g = panel[panel["product_id"] == pid].sort_values("month")
-    run_start = g["month"].iloc[-1]
-    for m, st in zip(reversed(list(g["month"])), reversed(list(g["status"]))):
-        if st != "fda_hold":
-            break
-        run_start = m
-    first_hold[pid] = f"{run_start:%Y-%m}"
 active = set(op["product_id"])
 reasons = {(r.product_id, r.month): r.reason.split("; forecast")[0] for r in op.itertuples()}
 fcl = fc[fc["product_id"].isin(active)][["product_id", "month", "mean"]].rename(columns={"mean": "forecast"})
@@ -292,7 +292,7 @@ say("", f"{len(rp)} rows -> outputs/reorder_points.csv; {len(first_hold)} produc
 inv_path = Path(a.inventory)
 if inv_path.exists() and a.source == "real":
     from inventory import stock_ingest
-    inv = stock_ingest.run(inv_path, a.data, OUT, log=lambda m: say("", m))
+    inv = stock_ingest.run(inv_path, a.data, OUT, log=lambda m: say("", m), answers=ans)
     say("7. Inventory", f"data/stock.csv rebuilt from {inv_path.name}: columns found {list(inv['columns_found'])}")
 use_stock = (Path(a.data) / "stock.csv").exists() if a.use_stock is None else a.use_stock
 if a.use_stock and not (Path(a.data) / "stock.csv").exists():
@@ -301,10 +301,16 @@ if a.use_stock and not (Path(a.data) / "stock.csv").exists():
 
 say("Comparison table (headline, scored months)", headline.round(2))
 say("Verdict", verdict)
-bo, bl = brand_orders.run(a.data, OUT, today, int(a.cover_months), use_stock)
+bo, bl = brand_orders.run(a.data, OUT, today, int(a.cover_months), use_stock, answers=ans)
 say("8. Brand orders", f"{len(bo)} brand orders ({bo['brand'].nunique()} brands), {len(bl)} lines -> "
     f"{OUT}/brand_orders.csv, brand_order_lines.csv, brands.csv; statuses: "
     + ", ".join(f"{k} {v}" for k, v in bo["status"].value_counts().items()))
+answer_report = ans.report()
+answer_report.to_csv(OUT / "answers_applied.csv", index=False)
+say("9. Owner answers", answers.summary(answer_report))
+attention = answer_report[~answer_report["status"].isin([answers.APPLIED, answers.CONFIRMED, answers.NO_CHANGE, answers.SUPERSEDED])]
+if len(attention):
+    say("", attention[["question_id", "answer", "status", "action"]])
 
 
 def _row(t, seg, m):

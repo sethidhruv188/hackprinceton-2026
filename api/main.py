@@ -91,6 +91,11 @@ def records(df):
 
 
 def holds_now():
+    """Products on hold now. The engine writes outputs/holds_now.csv after applying the owner's answers
+    (a released hold is no longer listed); older outputs without it fall back to sales.csv."""
+    h = csv_out("holds_now.csv", required=False)
+    if "product_id" in h:
+        return set(h["product_id"].dropna())
     pan, _ = panel()
     last = pan["month"].max()
     return set(pan.loc[(pan["month"] == last) & (pan["status"] == "fda_hold"), "product_id"])

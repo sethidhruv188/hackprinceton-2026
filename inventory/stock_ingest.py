@@ -112,8 +112,10 @@ def prefix_units(detail, panel, min_items=8, months=6):
     return ev["unit"].to_dict(), ev.round(2).reset_index()
 
 
-def map_to_products(inv, item_map, products, unit=INVENTORY_UNIT, prefix_unit=None):
+def map_to_products(inv, item_map, products, unit=INVENTORY_UNIT, prefix_unit=None, code_map=None, ignore=None):
     """Map raw codes to current products and convert to current-code cases.
+    code_map: {RAW_UPPER: product_id} from owner answers for codes with no sales; ignore: {RAW_UPPER} the
+    owner says are packaging (match "ignored (owner: packaging)", never counted).
     Returns (stock per product, per-code detail incl. unmatched)."""
     im = item_map.copy()
     im["key"] = im["raw_item"].str.upper()
@@ -124,7 +126,11 @@ def map_to_products(inv, item_map, products, unit=INVENTORY_UNIT, prefix_unit=No
     pids = set(products["product_id"])
     direct = d["product_id"].isna() & d["raw_item"].isin(pids)
     d.loc[direct, "product_id"] = d.loc[direct, "raw_item"]
-    d["match"] = np.where(d["product_id"].isin(pids), np.where(direct, "current code", "via item_map"), "unmatched")
+    owner = d["product_id"].isna() & d["key"].isin(set(code_map or {}))
+    d.loc[owner, "product_id"] = d.loc[owner, "key"].map(code_map or {})
+    d["match"] = np.where(d["product_id"].isin(pids),
+                          np.where(direct, "current code", np.where(owner, "owner answer", "via item_map")), "unmatched")
+    d.loc[d["key"].isin(set(ignore or ())) & (d["match"] == "unmatched"), "match"] = "ignored (owner: packaging)"
     # packs per case of the code itself (from the sales name if known, else from the inventory description)
     parsed = P.parse_all(d["description"])["packs_per_case"]
     d["packs"] = pd.to_numeric(d["packs_per_case"], errors="coerce").fillna(parsed)
@@ -142,7 +148,7 @@ def map_to_products(inv, item_map, products, unit=INVENTORY_UNIT, prefix_unit=No
     factor = d["qty_to_cases"] * d["to_current_cases"] / np.where(divide & d["packs"].notna(), d["packs"], 1.0)
     for f in ("on_hand", "on_order", "held"):
         d[f"{f}_cases"] = d[f] * factor
-    m = d[d["match"] != "unmatched"]
+    m = d[~d["match"].isin(["unmatched", "ignored (owner: packaging)"])]
     stock = m.groupby("product_id").agg(
         on_hand_cases=("on_hand_cases", lambda s: s.sum(min_count=1)),
         on_order_cases=("on_order_cases", lambda s: s.sum(min_count=1)),
@@ -170,19 +176,25 @@ def cover_check(stock, panel, months=6):
     return c.reset_index()
 
 
-def run(path="data/raw/Inventory/CurrentInventory.xlsx", data="data", out="outputs", unit=INVENTORY_UNIT, log=print):
+def run(path="data/raw/Inventory/CurrentInventory.xlsx", data="data", out="outputs", unit=INVENTORY_UNIT, log=print,
+        answers=None):
+    """answers: inventory.answers.Answers (default: read <data>/owner_answers.csv): inventory codes the owner
+    identified or called packaging, and stock counts the owner accepted (no longer flagged)."""
+    from . import answers as A
     data, out = Path(data), Path(out)
+    ans = A.ensure(answers, data)
     inv, found = read_inventory(path)
     panel, products, _ = load(data)
     item_map = pd.read_csv(data / "item_map.csv")
-    _, first = map_to_products(inv, item_map, products, unit)
+    code_map, ignore = A.inventory_codes(ans, products["product_id"])
+    _, first = map_to_products(inv, item_map, products, unit, code_map=code_map, ignore=ignore)
     pu, evidence = prefix_units(first, panel) if unit == "packs" else ({}, pd.DataFrame())
     evidence.to_csv(out / "inventory_unit_evidence.csv", index=False)
-    stock, detail = map_to_products(inv, item_map, products, unit, pu)
+    stock, detail = map_to_products(inv, item_map, products, unit, pu, code_map=code_map, ignore=ignore)
     stock.to_csv(data / "stock.csv", index=False)
     log("item-code prefixes counted in cases (evidence in outputs/inventory_unit_evidence.csv): "
         + (", ".join(sorted(k for k, v in pu.items() if v == "cases")) or "none"))
-    cov = cover_check(stock, panel)
+    cov = A.cover_flags(cover_check(stock, panel), ans)
     cov.to_csv(out / "stock_cover_check.csv", index=False)
     un = detail[detail["match"] == "unmatched"]
     un[["raw_item", "description", "section", "on_hand"]].to_csv(out / "inventory_unmatched_codes.csv", index=False)

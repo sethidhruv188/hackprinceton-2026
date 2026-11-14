@@ -150,6 +150,14 @@ STOCK_LINE_EXTRA = ["stock_at_arrival", "runs_out_before_arrival", "on_hand_case
 NO_ON_ORDER = "stock already ordered or at sea is not included; check before ordering."
 
 
+def order_warning(on_order_known, on_order_answer=None, extra=""):
+    """Warning shown on every stock-mode order. on_order_answer: the owner's answer to stock:on_order
+    ('no' = nothing on the way, so no warning; 'yes' = a stronger one). extra: e.g. disputed inventory units."""
+    from .answers import ON_ORDER_YES
+    base = "" if on_order_known or on_order_answer == "no" else (ON_ORDER_YES if on_order_answer == "yes" else NO_ON_ORDER)
+    return "; ".join(w for w in (base, extra) if w)
+
+
 def _lines_frame(rows, pinfo, cbm):
     l = pd.DataFrame(rows)
     if l.empty:
@@ -163,8 +171,9 @@ def _lines_frame(rows, pinfo, cbm):
 
 
 def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_months=2, cushion_months=policy.CUSHION_MONTHS,
-                     harvest_rules=None, cbm=None, cfg=None):
+                     harvest_rules=None, cbm=None, cfg=None, on_order_answer=None, extra_warning=""):
     """Brand orders when stock data exists (see inventory/stock_plan.py for the rules).
+    on_order_answer / extra_warning: from the owner's answers (see order_warning).
     Returns dict(orders, lines, status, projection, harvest, candidates_unconfirmed, on_order_known)."""
     from . import stock_plan as SP
     today = pd.Timestamp(today).normalize()
@@ -312,7 +321,7 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                            containers_by_volume=by_volume(summary), containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
                            container_bound=summary["bound"], pulled_forward_cases=int(l.loc[l["pulled_forward"], "cases"].sum()),
                            cbm_estimated_pct=round(100 * est / summary["cbm"], 0) if summary["cbm"] else None,
-                           warning="" if present["on_order"] else NO_ON_ORDER))
+                           warning=order_warning(present["on_order"], on_order_answer, extra_warning)))
         l["order_id"], l["brand"] = oid, brand
         lines.append(l)
     # harvest orders that don't ride with a regular order ship as their own brand order
@@ -346,7 +355,7 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                                containers_by_volume=by_volume(summary), containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
                                container_bound=summary["bound"], pulled_forward_cases=0,
                                cbm_estimated_pct=round(100 * est / summary["cbm"], 0) if summary["cbm"] else None,
-                               warning="" if present["on_order"] else NO_ON_ORDER))
+                               warning=order_warning(present["on_order"], on_order_answer, extra_warning)))
             l["order_id"], l["brand"] = oid, brand
             lines.append(l)
     cols = ORDER_COLUMNS + STOCK_ORDER_EXTRA
@@ -359,11 +368,26 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                 on_order_known=present["on_order"], cbm=cbm, stock_columns=present)
 
 
-def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None):
-    """use_stock=None: use data/stock.csv when it exists (the default)."""
+def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, answers=None):
+    """use_stock=None: use data/stock.csv when it exists (the default).
+    answers: inventory.answers.Answers (default: read <data>/owner_answers.csv). Applied here: hold
+    releases and confirmed gaps (current holds, written to outputs/holds_now.csv), discontinued products,
+    and, against stock, disputed stock counts, case sizes, container limits, harvest rules and the
+    on-order / units warnings."""
+    from . import answers as A
+    from .gaps import detect_unflagged_gaps
     data, out = Path(data), Path(out)
+    ans = A.ensure(answers, data)
     panel, products, _ = load(data)
+    panel, _ = A.apply_gaps(panel, detect_unflagged_gaps(panel), ans)
+    hold_since, _released = A.effective_holds(panel, ans)
+    holds = set(hold_since)
+    pd.DataFrame({"product_id": sorted(holds), "on_hold_since": [hold_since[p] for p in sorted(holds)]},
+                 columns=["product_id", "on_hold_since"]).to_csv(out / "holds_now.csv", index=False)
+    im_path = data / "item_map.csv"
+    gone = A.discontinued(ans, pd.read_csv(im_path, dtype=str) if im_path.exists() else None)
     plan = pd.read_csv(out / "order_plan.csv", dtype={"product_id": str})
+    plan = plan[~plan["product_id"].isin(gone)]
     bm = B.assign(products, data / "raw" / "brand_overrides.csv")
     bm.to_csv(out / "product_brands.csv", index=False)
     sp = data / "stock.csv"
@@ -374,7 +398,9 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None):
     today = pd.Timestamp(today) if today else pd.Timestamp.today().normalize()
     summ = B.summary(bm, panel, products, set(plan["product_id"]))
     if not use_stock:
-        orders, lines = build(plan, bm, today, cover_months, current_holds(panel), B.brand_info(data / "raw" / "brands.csv"))
+        ans.skip(["cbm", "container", "harvest", "stock", "units", "invcode"],
+                 "only used when ordering against stock (data/stock.csv)")
+        orders, lines = build(plan, bm, today, cover_months, holds, B.brand_info(data / "raw" / "brands.csv"))
         summ.to_csv(out / "brands.csv", index=False)
         orders.to_csv(out / "brand_orders.csv", index=False)
         lines.to_csv(out / "brand_order_lines.csv", index=False)
@@ -382,10 +408,19 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None):
             (out / f).unlink(missing_ok=True)
         return orders, lines
     from . import stock_plan as SP
-    stock = pd.read_csv(sp, dtype={"product_id": str})
+    stock, count_notes = A.apply_stock_counts(pd.read_csv(sp, dtype={"product_id": str}), ans)
     fc = pd.read_csv(out / "forecast.csv", dtype={"product_id": str})
-    cbm = SP.cbm_table(products, SP.stock_frame(stock)[0], overrides_path=data / "raw" / "case_cbm.csv")
-    r = build_with_stock(fc, products, bm, stock, today, current_holds(panel), cover_months, cbm=cbm)
+    fc = fc[~fc["product_id"].isin(gone)]
+    case_cbm = data / "raw" / "case_cbm.csv"
+    cbm = SP.cbm_table(products, SP.stock_frame(stock)[0], overrides_path=case_cbm, answers=A.cbm_overrides(ans, case_cbm))
+    on_order, extra = A.stock_warnings(ans)
+    r = build_with_stock(fc, products, bm, stock, today, holds, cover_months, cbm=cbm,
+                         cfg=A.container_config(SP.containers_config(), ans), harvest_rules=A.harvest_rules(SP.harvest_rules(), ans),
+                         on_order_answer=on_order, extra_warning=extra)
+    if count_notes and len(r["lines"]):
+        add = r["lines"]["product_id"].map(count_notes)
+        r["lines"]["note"] = [("; ".join(x for x in (n, a) if isinstance(x, str) and x) if isinstance(a, str) else n)
+                              for n, a in zip(r["lines"]["note"], add)]
     last = panel["month"].max()
     avg6 = panel[panel["month"] > last - pd.DateOffset(months=6)].groupby("product_id")["units_sold"].mean()
     on_hand = r["status"].set_index("product_id")["on_hand_cases"]

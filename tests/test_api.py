@@ -1,30 +1,21 @@
 """Every API endpoint on synthetic data (generated into a temp folder; no real data)."""
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-ROOT = Path(__file__).resolve().parent.parent
-
-# The session fixture runs the real pipeline once (about 1 minute even with the short simulation below), and
-# pytest-timeout charges fixture setup to the first test that uses it, so this module gets a longer limit than
+# The demo_run session fixture (conftest.py) runs the real pipeline once (about 1 minute with its short simulation),
+# and pytest-timeout charges fixture setup to the first test that uses it, so this module gets a longer limit than
 # the 60 s default in pytest.ini.
 pytestmark = pytest.mark.timeout(180)
 
 
 @pytest.fixture(scope="session")
-def client(tmp_path_factory):
-    base = tmp_path_factory.mktemp("demo")
-    data, out, models = base / "data", base / "outputs", base / "models"
-    # --sim-from 2026-06: a short simulation (warm-up Jun-Sep, scored Oct 2026) is enough to write every output
-    # the API reads; the simulation itself is tested in test_backtest.py. In-process TestClient: no server, no port.
-    subprocess.run([sys.executable, "-W", "ignore", str(ROOT / "run.py"), "--generate", "--data", str(data), "--out", str(out),
-                    "--models", str(models), "--today", "2026-11-14", "--sim-from", "2026-06"],
-                   check=True, cwd=ROOT, capture_output=True)
+def client(demo_run):
+    # demo_run (tests/conftest.py) runs the pipeline once on synthetic data. In-process TestClient: no server, no port.
+    data, out = demo_run["data"], demo_run["out"]
     assert not (data / "stock.csv").exists()                       # no stock data is ever created
     os.environ.update(DASH_DATA=str(data), DASH_OUT=str(out), DASH_TODAY="2026-11-14")
     from api.main import app

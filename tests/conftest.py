@@ -73,3 +73,20 @@ def make_panel(n=4, seed=0):
 @pytest.fixture
 def panel_products():
     return make_panel()
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session")
+def demo_run(tmp_path_factory):
+    """Run the whole pipeline once on synthetic data in a temp folder: {data, out, models} paths.
+    --sim-from 2026-06: a short simulation (warm-up Jun-Sep, scored Oct 2026) still writes every output the
+    API and the answer loop read; the simulation itself is tested in test_backtest.py."""
+    import subprocess
+    base = tmp_path_factory.mktemp("demo")
+    paths = dict(data=base / "data", out=base / "outputs", models=base / "models")
+    subprocess.run([sys.executable, "-W", "ignore", str(ROOT / "run.py"), "--generate", "--data", str(paths["data"]),
+                    "--out", str(paths["out"]), "--models", str(paths["models"]), "--today", "2026-11-14", "--sim-from", "2026-06"],
+                   check=True, cwd=ROOT, capture_output=True)
+    return paths
