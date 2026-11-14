@@ -3,7 +3,7 @@
   python run.py --source real --today 2026-11-14            # real data in data/ (from --ingest)
   python run.py --source real --ingest --today 2026-11-14   # rebuild data/ from data/raw/sales/*.xlsx first
   python run.py --source real --skip-sim --today 2026-11-14 # refresh models/plans, reuse the saved simulation
-  python run.py --generate                                  # synthetic demo data
+  python run.py --generate --today 2026-11-14               # synthetic demo data -> data_demo/, outputs_demo/, models_demo/
 
 Steps: holds -> spikes and product profiles -> simulation backtest of the ordering rule (model vs
 6-month averaging, cushion 1/2/3 months) -> single-month accuracy tables (secondary) -> final
@@ -23,14 +23,21 @@ import json
 from inventory import schema, synthetic, ingest, gaps, forecast, backtest, plan, checks, spikes, policy, simulate, brand_orders
 from inventory import tournament, large_orders
 
+ROOT = Path(__file__).resolve().parent
+REAL_DIRS = {"data": "data", "out": "outputs", "models": "models"}            # the real business folders
+DEMO_DIRS = {"data": "data_demo", "out": "outputs_demo", "models": "models_demo"}
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--source", choices=["real", "synthetic"], default="real")
-ap.add_argument("--generate", action="store_true", help="write synthetic data to data/ first (implies --source synthetic)")
+ap.add_argument("--generate", action="store_true",
+                help="write synthetic data first (implies --source synthetic); default folders data_demo/, outputs_demo/, models_demo/")
+ap.add_argument("--allow-overwrite-real-data", action="store_true",
+                help="let a synthetic run write into the real data/, outputs/ or models/ folders (refused otherwise)")
 ap.add_argument("--ingest", action="store_true", help="rebuild data/ from the .xlsx exports in --raw first")
 ap.add_argument("--raw", default="data/raw/sales")
-ap.add_argument("--data", default="data")
-ap.add_argument("--models", default="models")
-ap.add_argument("--out", default="outputs", help="where outputs are written (use a separate folder for the synthetic demo)")
+ap.add_argument("--data", default=None, help="default: data (real) or data_demo (synthetic)")
+ap.add_argument("--models", default=None, help="default: models (real) or models_demo (synthetic)")
+ap.add_argument("--out", default=None, help="where outputs are written; default: outputs (real) or outputs_demo (synthetic)")
 ap.add_argument("--skip-sim", action="store_true",
                 help="reuse <out>/sim_forecast_paths.csv instead of retraining the simulation forecasts")
 ap.add_argument("--today", default=None, help="plan date (YYYY-MM-DD); default today")
@@ -53,6 +60,18 @@ ap.add_argument("--use-stock", action=argparse.BooleanOptionalAction, default=No
 ap.add_argument("--inventory", default="data/raw/Inventory/CurrentInventory.xlsx",
                 help="current-inventory export; rebuilt into data/stock.csv when present")
 a = ap.parse_args()
+if a.generate:
+    a.source = "synthetic"
+defaults = DEMO_DIRS if a.source == "synthetic" else REAL_DIRS
+for key, folder in defaults.items():
+    if getattr(a, key) is None:
+        setattr(a, key, folder)
+if a.source == "synthetic" and not a.allow_overwrite_real_data:
+    clash = [f"--{k} {getattr(a, k)}" for k, real in REAL_DIRS.items()
+             if Path(getattr(a, k)).resolve() == (ROOT / real).resolve()]
+    if clash:
+        ap.error(f"a synthetic run would write into the real business folders ({', '.join(clash)}). "
+                 f"Use the defaults (data_demo/, outputs_demo/, models_demo/) or pass --allow-overwrite-real-data.")
 
 T0 = time.time()
 OUT = Path(a.out); OUT.mkdir(parents=True, exist_ok=True)
@@ -83,8 +102,7 @@ def md(obj):
 
 # ---------- load and holds ----------
 if a.generate:
-    a.source = "synthetic"
-    print("synthetic data ->", synthetic.generate(a.data))
+    print("synthetic data ->", synthetic.generate(a.data, allow_real=a.allow_overwrite_real_data))
 elif a.ingest:
     print("== Ingest ==")
     ingest.run(a.raw, a.data)

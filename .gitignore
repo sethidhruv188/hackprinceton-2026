@@ -25,3 +25,11 @@ web/smoke-shots/
 web/*.json
 !web/package.json
 !web/package-lock.json
+
+# Agent / iMessage runtime state and logs (may contain phone numbers)
+logs/
+imessage/state/
+*.log
+
+# Claude Code personal settings (attribution off etc.); never committed
+.claude/settings.local.json

@@ -1,4 +1,6 @@
-"""Small fake panels for tests (no real data)."""
+"""Small fake panels for tests (no real data), and a guard that fails any test touching the network."""
+import ipaddress
+import socket
 import sys
 from pathlib import Path
 
@@ -7,6 +9,48 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+_LOCAL_NAMES = {"localhost", "localhost.localdomain", ""}
+
+
+def _is_local(host):
+    if isinstance(host, bytes):
+        host = host.decode()
+    if host is None or host in _LOCAL_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host.split("%")[0]).is_loopback
+    except ValueError:
+        return False
+
+
+@pytest.fixture(autouse=True, scope="session")
+def no_network():
+    """Tests must not reach the network. Loopback stays allowed: asyncio (used by TestClient) connects to
+    127.0.0.1 internally on Windows. Subprocesses are not covered; tests/test_api.py runs run.py, which is offline."""
+    real_connect, real_connect_ex, real_getaddrinfo = socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo
+
+    def check(address):
+        if isinstance(address, tuple) and not _is_local(address[0]):
+            raise RuntimeError(f"network access blocked in tests: {address!r}")
+
+    def connect(self, address):
+        check(address)
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        check(address)
+        return real_connect_ex(self, address)
+
+    def getaddrinfo(host, *args, **kwargs):
+        check((host,))
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(socket.socket, "connect", connect)
+        mp.setattr(socket.socket, "connect_ex", connect_ex)
+        mp.setattr(socket, "getaddrinfo", getaddrinfo)
+        yield
 
 MONTHS = pd.date_range("2024-07-01", "2026-10-01", freq="MS")
 

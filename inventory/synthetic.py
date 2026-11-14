@@ -29,11 +29,16 @@ def diwali_months(years):
 
 
 DEMO_BRANDS = ["Sunrise", "Lotus", "Peacock", "Monsoon", "Banyan"]   # made-up names for the public demo
+REAL_DATA_DIR = Path(__file__).resolve().parent.parent / "data"      # the real business data: never overwritten by default
 
 
-def generate(out_dir="data", seed=42, write_stock=False):
+def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
     """Writes sales.csv and products.csv. stock.csv only with write_stock=True (off by default:
-    the pipeline runs on gross need and no stock data is created unless asked for)."""
+    the pipeline runs on gross need and no stock data is created unless asked for).
+    Refuses to write into the real data/ folder unless allow_real=True."""
+    if Path(out_dir).resolve() == REAL_DATA_DIR and not allow_real:
+        raise ValueError(f"refusing to write synthetic data into the real data folder {REAL_DATA_DIR}; "
+                         "use data_demo/ or pass allow_real=True")
     rng = np.random.default_rng(seed)
     months = pd.date_range(START + "-01", END + "-01", freq="MS")
     diwali = diwali_months(range(months[0].year, months[-1].year + 2))

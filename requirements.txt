@@ -10,7 +10,6 @@ aiohttp
 python-dotenv
 langchain-aws
 boto3
-pytest
 fastapi
 uvicorn[standard]
 httpx

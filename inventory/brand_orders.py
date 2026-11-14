@@ -142,7 +142,9 @@ def current_holds(panel):
     return set(panel.loc[(panel["month"] == last) & (panel["status"] == "fda_hold"), "product_id"])
 
 
-STOCK_ORDER_EXTRA = ["kind", "next_order_by", "runs_out_before_arrival", "on_hand_cases", "months_of_cover", "cbm", "containers", "containers_needed",
+# containers (in ORDER_COLUMNS) = max(CBM / usable CBM, kg / max kg); containers_by_volume = CBM / usable CBM only
+# (equal while config/containers.csv has no max_kg).
+STOCK_ORDER_EXTRA = ["kind", "next_order_by", "runs_out_before_arrival", "on_hand_cases", "months_of_cover", "cbm", "containers_by_volume", "containers_needed",
                      "last_container_fill_pct", "container_bound", "pulled_forward_cases", "cbm_estimated_pct", "warning"]
 STOCK_LINE_EXTRA = ["stock_at_arrival", "runs_out_before_arrival", "on_hand_cases", "position", "reorder_point", "cbm", "cbm_source", "pulled_forward", "harvest"]
 NO_ON_ORDER = "stock already ordered or at sea is not included; check before ordering."
@@ -177,6 +179,11 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
     harvest = SP.harvest_orders(F, starts, pids, extended, positions, members, today, cushion_months)
     proj = SP.projection(F, starts, pids, pstatus, today, cushion_months=cushion_months, cover_months=cover_months, stock=s)
     cfg = cfg or SP.containers_config()
+    usable_cbm = cfg["cbm"] * cfg["usable"]
+
+    def by_volume(summary):
+        return round(summary["cbm"] / usable_cbm, 2) if usable_cbm else None
+
     cbm = cbm if cbm is not None else SP.cbm_table(products, s)
     pinfo = products[["product_id", "name", "case_weight_kg"]]
     bmap = brand_map.set_index("product_id")["brand"]
@@ -302,7 +309,7 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                                   f"more reach it within 2 months" if when == today else
                                   f"next product reaches its reorder point on {when:%b %d, %Y}",
                            on_hand_cases=round(float(g["on_hand_cases"].sum()), 1), cbm=summary["cbm"],
-                           containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
+                           containers_by_volume=by_volume(summary), containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
                            container_bound=summary["bound"], pulled_forward_cases=int(l.loc[l["pulled_forward"], "cases"].sum()),
                            cbm_estimated_pct=round(100 * est / summary["cbm"], 0) if summary["cbm"] else None,
                            warning="" if present["on_order"] else NO_ON_ORDER))
@@ -336,7 +343,7 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                                reason=f"annual harvest buy, arrives {pd.Timestamp(g['expected_arrival'].iloc[0]):%b %Y}, "
                                       f"covers until {pd.Timestamp(g['covers_until'].iloc[0]):%b %Y} + cushion",
                                on_hand_cases=round(float(sum(positions.get(p, 0) for p in g["product_id"])), 1), cbm=summary["cbm"],
-                               containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
+                               containers_by_volume=by_volume(summary), containers_needed=summary["containers_needed"], last_container_fill_pct=summary["last_container_fill_pct"],
                                container_bound=summary["bound"], pulled_forward_cases=0,
                                cbm_estimated_pct=round(100 * est / summary["cbm"], 0) if summary["cbm"] else None,
                                warning="" if present["on_order"] else NO_ON_ORDER))

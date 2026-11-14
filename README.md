@@ -9,14 +9,31 @@ iMessage (Photon) and dashboard layers come next and call into this core.
 
 ```bash
 pip install -r requirements.txt
-python run.py --generate                                   # synthetic demo data -> data/
+python run.py --generate --today 2026-11-14                # synthetic demo -> data_demo/, outputs_demo/, models_demo/
 python run.py --source real --today 2026-11-14              # real data already ingested into data/
 python run.py --source real --ingest --today 2026-11-14     # rebuild data/ from data/raw/sales/*.xlsx first
-python -m pytest tests                                      # tests (fake data only)
+pip install -r requirements-dev.txt && python -m pytest  # tests (fake data only, no network; 60 s per test)
 ```
+
+The same commands work in PowerShell on Windows.
 
 Options: `--retest` (re-run the forecaster test and update the choice), `--baseline-months 6`, `--sim-from 2025-12`, `--cushion-months 2`, `--cover-months 2`,
 `--seed 7`, `--power 1.5`, `--[no-]cap-one-off`, `--fill-gaps`, `--plan-months 12`, `--use-stock`.
+
+### Folders and what each run changes
+
+- **Synthetic runs never touch the real folders.** `--generate` (or `--source synthetic`) defaults to
+  `data_demo/`, `outputs_demo/` and `models_demo/`, and refuses to write into `data/`, `outputs/` or
+  `models/` unless you pass `--allow-overwrite-real-data`. `synthetic.generate()` refuses the real `data/`
+  folder on its own too.
+- **Every `run.py` run rewrites `data/sales.csv`**: `gaps.relabel_holds()` marks suspected gaps as holds
+  (`status = fda_hold`, `hold_source = gap_detection`). It is deterministic, so re-running gives the same
+  file, but the file is rewritten each time. Keep a copy of `data/` before experimenting.
+- **`--retest` rewrites `config/forecaster.txt`**, which is tracked in git: the forecaster choice changes
+  for everyone once committed. Review `git diff config/forecaster.txt` before committing it.
+- **`--ingest` rebuilds `data/`** (`sales.csv`, `products.csv`, `item_map.csv`, `order_lines.csv`,
+  `monthly_volume.csv`) from `data/raw/sales/`, and the inventory export rebuilds `data/stock.csv`.
+- **`outputs/` and `models/` are overwritten** by every run (they are rebuilt from `data/`).
 
 The model learns each product's behaviour from its own sales first; festivals are not assumed to
 cause spikes. **Diwali is the only festival used as a model feature** (`fest_diwali_this`,
@@ -78,10 +95,18 @@ pip install -r requirements.txt            # adds fastapi, uvicorn
 python run.py --source real --today 2026-11-14              # writes outputs/ (the dashboard only reads files)
 ./dashboard.sh                              # real data   -> open http://127.0.0.1:5173
 ./dashboard.sh demo                         # synthetic demo, after:
-python run.py --generate --data data_demo --out outputs_demo --models models_demo --today 2026-11-14
+python run.py --generate --today 2026-11-14
 ```
 
-`./dashboard.sh` starts the API (`api/main.py`, FastAPI on 127.0.0.1:8765; set `DASH_API_PORT` to change)
+On Windows (PowerShell), use `dashboard.ps1` instead; it does the same thing:
+
+```powershell
+.\dashboard.ps1                             # real data -> open http://127.0.0.1:5173
+.\dashboard.ps1 demo                        # synthetic demo
+# if scripts are blocked: powershell -ExecutionPolicy Bypass -File .\dashboard.ps1
+```
+
+`./dashboard.sh` (or `dashboard.ps1`) starts the API (`api/main.py`, FastAPI on 127.0.0.1:8765; set `DASH_API_PORT` to change)
 and the web app (`web/`, React + Vite on 127.0.0.1:5173), installing `web/node_modules` the first time
 (needs Node 18+). `DASH_TODAY=YYYY-MM-DD` pins the date the page uses.
 
@@ -109,9 +134,10 @@ Brands and brand orders (written by `run.py`, or `python -m inventory.brand_orde
   `data/stock.csv`) it subtracts on hand + on order. -> `outputs/brand_orders.csv`,
   `outputs/brand_order_lines.csv` (stable columns: the iMessage agent reads them).
 
-Checks: `python -m pytest tests` (includes every API endpoint on synthetic data);
+Checks: `python -m pytest` (needs `requirements-dev.txt`; includes every API endpoint on synthetic data; a test that opens a non-local connection fails; `python check_bedrock.py` is the separate live Bedrock check);
 `cd web && npm run build`; with the dashboard running, `cd web && npm run smoke` clicks through every
-page in the locally installed Chrome (puppeteer-core, no browser download) at desktop and phone width.
+page in the locally installed Chrome or Edge (puppeteer-core, no browser download; found automatically on
+Windows, macOS and Linux, or set `CHROME` to the browser's path) at desktop and phone width.
 
 ## Which forecast feeds the ordering rule (chosen by data)
 
