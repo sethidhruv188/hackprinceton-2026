@@ -6,6 +6,12 @@ import Diwali from "./pages/Diwali.jsx";
 import Questions from "./pages/Questions.jsx";
 import Quality from "./pages/Quality.jsx";
 import Overview from "./pages/Overview.jsx";
+import Brands from "./pages/Brands.jsx";
+import Products from "./pages/Products.jsx";
+import Harvest from "./pages/Harvest.jsx";
+import Sourcing from "./pages/Sourcing.jsx";
+import Ask from "./pages/Ask.jsx";
+import Activity from "./pages/Activity.jsx";
 import { NAV, Sidebar, TopBar, useLayout } from "./Shell.jsx";
 
 // Tiny hash router: #/, #/orders, #/brand/<name>, #/product/<id>, #/diwali, #/questions, #/quality, ...
@@ -17,14 +23,6 @@ function useRoute() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
   return hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
-}
-
-function NotYet({ name }) {
-  return (
-    <div className="placeholder-page" data-ready={`todo-${name}`}>
-      <p>This page is built in the next step, once the layout and the Overview are approved.</p>
-    </div>
-  );
 }
 
 const TITLES = Object.fromEntries(NAV.flatMap((g) => g.items.map(([href, label]) => [href, label])));
@@ -39,7 +37,12 @@ export default function App() {
   else if (page === "diwali") body = <Diwali />;
   else if (page === "questions") body = <Questions />;
   else if (page === "quality") body = <Quality />;
-  else if (["brands", "products", "harvest", "sourcing", "ask", "activity"].includes(page)) body = <NotYet name={page} />;
+  else if (page === "brands") body = <Brands />;
+  else if (page === "products") body = <Products />;
+  else if (page === "harvest") body = <Harvest />;
+  else if (page === "sourcing") body = <Sourcing />;
+  else if (page === "ask") body = <Ask />;
+  else if (page === "activity") body = <Activity />;
   else { body = <Overview />; active = ""; }
   title = title || TITLES[active] || "Overview";
 

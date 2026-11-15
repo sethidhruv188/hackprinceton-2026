@@ -5,7 +5,7 @@ import { Banner, ContainerLine, downloadCSV, ErrorBox, Figure, GrossBanner, Load
 const LATE = "Too late for full lead time: expedite";
 const CSV_COLUMNS = [["product_id", "Item code"], ["name", "Product"], ["on_hand_cases", "On hand (cases)"],
   ["cases", "Cases to order"], ["kg", "kg"], ["cbm", "CBM"], ["cbm_source", "CBM source"], ["pulled_forward", "Pulled forward"],
-  ["harvest", "Harvest buy"], ["on_hold", "On hold"], ["note", "Note"], ["reason", "Why"]];
+  ["harvest", "Harvest buy"], ["on_hold", "On hold"], ["owner_adjustment", "Owner adjustment"], ["note", "Note"], ["reason", "Why"]];
 
 function title(order) {
   if (order.kind === "harvest") return order.covers;
@@ -27,6 +27,7 @@ function OrderBlock({ order, today, brand, stockUsed }) {
           {l.harvest && <Tag>annual harvest buy</Tag>}
           {l.on_hold && <Tag tone="amber">on hold: confirm release</Tag>}
         </div>
+        {l.owner_adjustment && <div className="small"><span className="tag amber">owner adjustment</span> {l.owner_adjustment}</div>}
         {l.runs_out_before_arrival && !l.on_hold && <div className="small st-red">{l.note}</div>}
         {l.floor_dip_date && !l.on_hold && (
           <div className="small st-red">{l.floor_dip_date <= today ? "Below 3 months of stock now" : `Below 3 months of stock from ${niceDate(l.floor_dip_date, today, { relative: false })}`}: expedite or air-ship</div>)}

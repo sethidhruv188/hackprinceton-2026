@@ -298,3 +298,48 @@ details.more[open] > summary { margin-bottom: var(--s1); }
   .tbl.stack th, .tbl.stack td { border: 0; padding: 2px 0; text-align: left; }
   .tbl.stack td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-size: 12px; }
 }
+
+/* ---------------------------------------------------------------- polish: terminal-grade details, same rules */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Figures read like an instrument panel: small uppercase keys, large tabular values. */
+.figure .k { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.figure .v { font-size: 30px; letter-spacing: -0.01em; font-feature-settings: "tnum" 1, "zero" 1; }
+.figures { border-top: 1px solid var(--ink); }
+.figure { transition: background-color 150ms ease; }
+.figure:hover { background: var(--subtle); }
+
+/* Panels: a short accent tick on the section rule marks where each section starts. */
+.panel { position: relative; }
+.panel::before { content: ""; position: absolute; top: -1px; left: 0; width: 32px; height: 3px; background: var(--accent-brand); }
+.panel h2 { font-size: 15px; letter-spacing: 0.01em; }
+
+/* Tables: quiet row hover and a crisp header. */
+.tbl tbody tr { transition: background-color 150ms ease; }
+.tbl tbody tr:hover td, .tbl tbody tr:hover th { background: var(--subtle); }
+.tbl thead th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* System status strip under the page title: state as words, a small square only as a supporting mark. */
+.sysbar { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); padding: 6px var(--s3); border-bottom: 1px solid var(--line);
+  background: var(--subtle); font-size: 12px; color: var(--ink-2); letter-spacing: 0.02em; }
+.sysbar span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sysbar .sq { width: 7px; height: 7px; display: inline-block; background: var(--line-strong); }
+.sysbar .ok .sq { background: var(--st-green); }
+.sysbar .off .sq { background: var(--st-red); }
+.sysbar kbd { font: inherit; border: 1px solid var(--line-strong); padding: 0 4px; background: var(--bg); }
+@media (max-width: 960px) { .sysbar { padding: 6px var(--s2); } }
+
+/* Topbar title gets a mode chip in plain text. */
+.topbar h1 { letter-spacing: -0.005em; }
+.mode-chip { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--ink);
+  padding: 1px 8px; color: var(--ink); }
+.mode-chip.demo { border-color: var(--line-strong); color: var(--muted); }
+
+/* Harvest timeline: wide table scrolls inside its frame; first column stays visible. */
+.timeline th:first-child { position: sticky; left: 0; background: var(--bg); z-index: 1; min-width: 160px; }
+.timeline thead th:first-child { background: var(--subtle); z-index: 2; }
+.timeline tbody tr:hover th:first-child { background: var(--subtle); }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+.ask-empty .field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.chat-log { min-height: 200px; }

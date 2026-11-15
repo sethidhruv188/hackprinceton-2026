@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSettings } from "./settings.jsx";
 import { niceDate } from "./format.js";
+import { getJSON } from "./api.js";
 
 // Sidebar groups, in order. href "" is the Overview (#/).
 export const NAV = [
@@ -109,8 +110,38 @@ export function Sidebar({ active, wide, id }) {
   );
 }
 
+// Agent availability for the status strip (checked once per settings change).
+function useAgentStatus() {
+  const { rev } = useSettings();
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    let live = true;
+    getJSON("/ask/status").then((s) => live && setSt(s)).catch(() => live && setSt({ available: false, reason: "API not reachable" }));
+    return () => { live = false; };
+  }, [rev]);
+  return st;
+}
+
+// "/" jumps to the page's search box, like most professional tools.
+function useSlashToSearch() {
+  useEffect(() => {
+    const on = (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const box = document.querySelector('.content input[type="search"], .content textarea');
+      if (box) { e.preventDefault(); box.focus(); }
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
+}
+
 export function TopBar({ title, menuId, wide }) {
   const { settings } = useSettings();
+  const agent = useAgentStatus();
+  useSlashToSearch();
+  const mode = settings?.mode;
   return (
     <>
       <header className="topbar">
@@ -121,10 +152,22 @@ export function TopBar({ title, menuId, wide }) {
         {settings && (
           <div className="meta">
             <span>Viewing as of <strong>{niceDate(settings.as_of, null, { relative: false })}</strong></span>
-            <span><strong>{settings.mode === "demo" ? "Demo data" : settings.mode === "real" ? "Real data" : "Custom folders"}</strong></span>
+            <span className={`mode-chip ${mode === "demo" ? "demo" : ""}`}>{mode === "demo" ? "Demo data" : mode === "real" ? "Real data" : "Custom folders"}</span>
           </div>
         )}
       </header>
+      {settings && (
+        <div className="sysbar" role="status" aria-label="System status">
+          <span>Engine run {niceDate(settings.run_date, null, { relative: false })}</span>
+          {agent && (
+            <span className={agent.available ? "ok" : "off"} title={agent.reason || agent.model}>
+              <i className="sq" aria-hidden="true" />Agent {agent.available ? "online" : "offline"}
+              {agent.available && agent.research?.web_search === false ? ", no web search" : ""}
+            </span>
+          )}
+          {wide && <span>Press <kbd>/</kbd> to search</span>}
+        </div>
+      )}
       {settings?.as_of_set && (
         <p className="asof-note" role="note">
           Viewing as of {niceDate(settings.as_of, null, { relative: false })}: statuses and deadlines are recomputed for this
