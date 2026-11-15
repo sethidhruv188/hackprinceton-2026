@@ -1,6 +1,7 @@
 import { AlertTriangle, Info } from "lucide-react";
 import { host } from "./format.js";
 import { StatusPill } from "./ui.jsx";
+import { RobotStill } from "./robot/Robot.jsx";
 
 // Status as a pill: icon + words, so meaning never depends on color alone.
 export function StatusText({ status }) {
@@ -10,17 +11,24 @@ export function StatusText({ status }) {
 // Quiet loading placeholder: grey bars, no spinner.
 export function Loading({ what = "Loading" }) {
   return (
-    <div className="skeleton" role="status" aria-label={what}>
-      <span /><span /><span />
+    <div role="status" aria-label={what} style={{ display: "grid", gridTemplateColumns: "44px minmax(0,1fr)", gap: 14, alignItems: "center" }}>
+      <span style={{ width: 44, height: 44 }} aria-hidden="true"><RobotStill mood="thinking" /></span>
+      <div className="skeleton"><span /><span /><span /></div>
     </div>
   );
 }
 
+// Errors are delivered by the agent, with a retry.
 export function ErrorBox({ error }) {
   return (
-    <p className="error" role="alert">
-      Could not load this page: {String(error?.message || error)}. Is the dashboard server running?
-    </p>
+    <div className="panel hud" role="alert" style={{ display: "grid", gridTemplateColumns: "72px minmax(0,1fr)", gap: 16, alignItems: "center" }}>
+      <span style={{ width: 72, height: 72 }} aria-hidden="true"><RobotStill mood="alert" /></span>
+      <div>
+        <b>I couldn't load this page.</b>
+        <p className="note" style={{ marginTop: 4 }}>{String(error?.message || error)}. Is the dashboard server running? Your data is unchanged.</p>
+        <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    </div>
   );
 }
 

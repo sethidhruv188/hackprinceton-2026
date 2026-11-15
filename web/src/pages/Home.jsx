@@ -6,9 +6,11 @@ import { getJSON } from "../api.js";
 import { cases, monthLabel, shortMonth, weight } from "../format.js";
 import { downloadCSV, ErrorBox } from "../components.jsx";
 import {
-  BrandName, ContainerFill, Drawer, EmptyState, KPI, Pill, RiskBar, RunwayBar, SkeletonCards, StatusPill, Term, Tip,
-  fmt0, fmt1, relDays, shortDate, useToast,
+  BrandName, ContainerFill, Drawer, EmptyState, KPI, Pill, RiskBar, RunwayBar, SkeletonCards, StatusPill, TableControls, Term, Tip, Why,
+  brandParts, fmt0, fmt1, relDays, shortDate, toCSV, useQueryState, useTablePrefs, useToast,
 } from "../ui.jsx";
+import { useAgent, usePointed } from "../agent.jsx";
+import { FileText, Undo2 } from "lucide-react";
 
 const ORDER = ["Order now", "Order this month", "Coming up"];
 const LATE = "Too late for full lead time: expedite";
@@ -30,12 +32,17 @@ const FILTERS = {
 // "Approve" only records, in this browser, that the buyer reviewed the order. Nothing is sent or ordered.
 function useApprovals() {
   const [a, setA] = useState(() => { try { return JSON.parse(localStorage.getItem("approved-orders") || "{}"); } catch { return {}; } });
-  const approve = useCallback((id) => setA((x) => {
-    const n = { ...x, [id]: new Date().toISOString() };
-    try { localStorage.setItem("approved-orders", JSON.stringify(n)); } catch { /* storage blocked */ }
-    return n;
-  }), []);
-  return [a, approve];
+  const [last, setLast] = useState([]);              // undo stack (this session)
+  const write = (n) => { try { localStorage.setItem("approved-orders", JSON.stringify(n)); } catch { /* storage blocked */ } return n; };
+  const approve = useCallback((id) => { setA((x) => write({ ...x, [id]: new Date().toISOString() })); setLast((l) => [...l, id]); }, []);
+  const undo = useCallback(() => {
+    setLast((l) => {
+      const id = l[l.length - 1];
+      if (id) setA((x) => { const n = { ...x }; delete n[id]; return write(n); });
+      return l.slice(0, -1);
+    });
+  }, []);
+  return [a, approve, undo, last.length > 0];
 }
 
 // ---------------------------------------------------------------- shipping timeline (Gantt)
@@ -136,6 +143,7 @@ function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
       footer={o && (
         <>
           <a className="btn ghost" href={`#/brand/${encodeURIComponent(brand)}`}>Open brand page</a>
+          <button type="button" className="btn" onClick={() => printDraftPO(brand, o, lines, today)}><FileText className="ico-sm" />Draft PO</button>
           <button type="button" className="btn" onClick={adjust}><SlidersHorizontal className="ico-sm" />Adjust</button>
           <button type="button" className="btn primary" disabled={!!approved[o.order_id]}
                   onClick={() => { onApprove(o.order_id); toast(`${brand}: marked as approved on this computer. Nothing is sent or ordered.`); }}>
@@ -150,6 +158,9 @@ function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
           {o ? (
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <StatusPill status={o.status} />
+              <Why items={[["Sold per month", cases(d.info?.monthly_cases)], ["On hand", d.info?.on_hand_cases != null ? cases(d.info.on_hand_cases) : null],
+                ["Months of stock", d.info?.months_of_cover != null ? `${fmt1(d.info.months_of_cover)} months` : null], ["Floor", "3 months of sales"],
+                ["Shipping", "105 to 130 days (safe date uses 130)"], ["This order", `${cases(o.cases)}, ${o.covers}`]]} />
               <span className="small">Order by <b>{shortDate(o.order_by_safe, true)}</b> ({relDays(o.order_by_safe, today)}), latest {shortDate(o.order_by_latest, true)}</span>
             </div>
           ) : <p className="note">No upcoming orders in the 12-month plan.</p>}
@@ -158,6 +169,12 @@ function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
             <div><span>Weight</span><b>{o ? weight(o.kg) : "-"}</b></div>
             <div><span>Containers</span><b>{o?.containers_needed ?? (o?.containers != null ? `~${o.containers}` : "-")}</b></div>
           </div>
+          {o?.containers_needed > 0 && (
+            <div>
+              <h3>Containers <Tip text="Each box is one container; the last one is filled to the engine's fill level. Hover to rotate." /></h3>
+              <Containers3D n={o.containers_needed} lastPct={o.last_container_fill_pct} />
+            </div>
+          )}
           <div>
             <h3>Stock runway <Tip text="Months of stock on hand at the last 6 months' sales pace, against the 3-month floor." /></h3>
             <RunwayBar months={d.info?.months_of_cover} />
@@ -171,13 +188,13 @@ function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
                   <ComposedChart data={proj.months} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="month" tickFormatter={shortMonth} tickLine={false} axisLine={false} />
-                    <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={(v) => fmt0(v)} />
+                    <YAxis tickLine={false} axisLine={false} width={56} tickFormatter={(v) => fmt0(v)} label={{ value: "cases", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} />
                     <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
                       <div className="tip"><strong>{monthLabel(label)}</strong>
                         {payload.map((p) => <div key={p.dataKey}>{p.name}: {cases(p.value)}</div>)}</div>) : null} />
                     <Area dataKey="projected_with_suggested_order" name="With the suggested order" stroke="var(--ok-fill)" fill="var(--ok-bg)" strokeWidth={2} />
                     <Line dataKey="projected_stock" name="With no new order" stroke="var(--chart-1)" strokeDasharray="4 3" dot={false} strokeWidth={1.5} />
-                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} />
+                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} className="floor-line" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -226,15 +243,115 @@ function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
 }
 
 // ---------------------------------------------------------------- page
+// ---------------------------------------------------------------- scrub through the engine's stock projection
+function Scrubber({ brands, onOpen }) {
+  const [data, setData] = useState(null);
+  const [i, setI] = useState(0);
+  useEffect(() => { getJSON("/projection/brands?months=12").then(setData).catch(() => setData({ available: false })); }, []);
+  if (!data) return null;
+  if (!data.available || !data.months.length) return null;           // no stock projection: feature hidden
+  const month = data.months[Math.min(i, data.months.length - 1)];
+  const keep = new Set(brands);
+  const rows = data.brands.filter((b) => keep.has(b.brand)).map((b) => ({ brand: b.brand, m: b.months.find((x) => x.month === month) }))
+    .filter((r) => r.m).sort((a, b) => b.m.below_floor - a.m.below_floor || a.brand.localeCompare(b.brand));
+  const totalBelow = rows.reduce((n, r) => n + r.m.below_floor, 0);
+  const label = (m) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  return (
+    <section className="panel hud" aria-labelledby="scrub-h">
+      <header>
+        <div><h2 id="scrub-h">Look ahead: stock if nothing new is ordered</h2>
+          <p className="sub">Drag through the engine's 12-month projection. Products below the <Term k="floor">3-month floor</Term> per brand, without the suggested orders.</p></div>
+        <span className="pill crit" aria-live="polite">{fmt0(totalBelow)} products below the floor in {label(month)}</span>
+      </header>
+      <div className="scrub">
+        <span className="when">{label(month)}</span>
+        <div>
+          <input type="range" min={0} max={data.months.length - 1} value={i} onChange={(e) => setI(Number(e.target.value))} aria-label="Month" />
+          <div className="scrub-ticks">{data.months.map((m) => <span key={m}>{label(m).split(" ")[0]}</span>)}</div>
+        </div>
+        <button type="button" className="btn ghost" onClick={() => setI(0)} disabled={i === 0}>Reset</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginTop: 14 }}>
+        {rows.slice(0, 12).map((r) => {
+          const pct = r.m.floor > 0 ? Math.min(100, (r.m.projected_stock / (r.m.floor * 2)) * 100) : 0;
+          return (
+            <button key={r.brand} type="button" className="action" style={{ gridTemplateColumns: "minmax(0,1fr) auto", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}
+                    onClick={() => onOpen(r.brand)}>
+              <span style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                <BrandName name={r.brand} avatar={false} />
+                <span className="runway"><span className="track"><span className={`fill ${r.m.projected_stock < r.m.floor ? "fill-crit" : "fill-ok"}`} style={{ width: `${pct}%` }} />
+                  <span className="floor" style={{ left: "50%" }} /></span></span>
+                <span className="small muted">{fmt0(r.m.projected_stock)} cases projected · floor {fmt0(r.m.floor)}</span>
+              </span>
+              <span className={r.m.below_floor ? "pill crit" : "pill ok"}>{fmt0(r.m.below_floor)} of {fmt0(r.m.products)} below</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Draft purchase order: printable, clearly marked as a draft that was not sent.
+function printDraftPO(brand, o, lines, today) {
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const rows = lines.map((l) => `<tr><td>${esc(l.product_id)}</td><td>${esc(l.name)}</td><td class="n">${fmt0(l.cases)}</td><td class="n">${l.kg != null ? fmt0(l.kg) : ""}</td><td class="n">${l.cbm != null ? fmt1(l.cbm) : ""}</td></tr>`).join("");
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Draft PO ${esc(brandParts(brand).label)}</title><style>
+    body{font:13px/1.5 Inter,system-ui,sans-serif;color:#111;margin:40px}h1{font-size:22px;margin:0}.draft{display:inline-block;border:2px solid #b91c1c;color:#b91c1c;
+    font-weight:700;letter-spacing:.08em;padding:4px 10px;transform:rotate(-2deg);margin:12px 0}table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}.n{text-align:right}tfoot td{font-weight:700}.meta{color:#555}</style></head><body>
+    <h1>Purchase order (draft)</h1><div class="draft">DRAFT, NOT SENT</div>
+    <p class="meta">Shakti Group USA · Supplier/brand: <b>${esc(brandParts(brand).label)}</b> · Prepared ${esc(today)} from the ordering engine's plan.<br>
+    Order by ${esc(o.order_by_safe)} (safe, 130-day shipping), latest ${esc(o.order_by_latest)} · ${esc(o.covers)}</p>
+    <table><thead><tr><th>Item code</th><th>Product</th><th class="n">Cases</th><th class="n">kg</th><th class="n">CBM</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><td></td><td>Total</td><td class="n">${fmt0(o.cases)}</td><td class="n">${o.kg != null ? fmt0(o.kg) : ""}</td><td class="n">${o.cbm != null ? fmt1(o.cbm) : ""}</td></tr></tfoot></table>
+    <p class="meta">Quantities exclude products on hold. Stock already ordered or at sea is not included; check before ordering. This draft was not sent to anyone.</p>
+    <script>window.onload=()=>window.print()</script></body></html>`);
+  w.document.close();
+}
+
+// CSS-3D containers filled to the real fill level (rotate on hover).
+function Containers3D({ n, lastPct }) {
+  if (!n) return null;
+  const shown = Math.min(n, 6);
+  return (
+    <div>
+      <div className="ctr3d-row" aria-label={`${n} container${n === 1 ? "" : "s"}${lastPct != null ? `, last one ${Math.round(lastPct)}% full` : ""}`}>
+        {Array.from({ length: shown }, (_, i) => {
+          const pct = i === n - 1 && lastPct != null ? Math.max(3, Math.min(100, lastPct)) : 100;
+          return (
+            <div key={i}>
+              <div className="ctr3d" aria-hidden="true">
+                <div className="f back" /><div className="f side2" /><div className="f bottom" />
+                <div className="load" style={{ width: `${(pct / 100) * 92}px` }} />
+                <div className="f front" /><div className="f side" /><div className="f top" />
+              </div>
+              <div className="ctr3d-cap">{pct}% full</div>
+            </div>
+          );
+        })}
+      </div>
+      {n > shown && <p className="note">+{n - shown} more full containers.</p>}
+    </div>
+  );
+}
+
 export default function Home() {
   const sum = useData("/summary");
   const br = useData("/brands");
-  const [filter, setFilter] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [q, setQ] = useState("");
+  const [filter, setFilter] = useQueryState("f", "all");
+  const [status, setStatus] = useQueryState("s", "all");
+  const [q, setQ] = useQueryState("q", "");
+  const [openQ, setOpenQ] = useQueryState("open", "");
+  const open = openQ || null;
+  const setOpen = (b) => setOpenQ(b || "");
   const [sel, setSel] = useState(-1);
-  const [open, setOpen] = useState(null);
-  const [approved, approve] = useApprovals();
+  const [approved, approve, undo, canUndo] = useApprovals();
+  const { confirm } = useAgent();
+  const pointed = usePointed();
+  const prefs = useTablePrefs("orders", [["weight", "Weight"], ["cbm", "CBM"], ["containers", "Containers"], ["risk", "SKUs at risk"]]);
   const tableRef = useRef(null);
 
   const withOrder = useMemo(() => (br.data ? br.data.brands.filter((b) => b.next_order) : []), [br.data]);
@@ -253,6 +370,7 @@ export default function Home() {
     else if (e.key === "Enter" && sel >= 0) { e.preventDefault(); setOpen(rows[sel].brand); }
   };
   useEffect(() => { tableRef.current?.querySelector("tr.sel")?.scrollIntoView({ block: "nearest" }); }, [sel]);
+  useEffect(() => { if (pointed.length) tableRef.current?.querySelector("tr.pointed")?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [pointed]);
 
   if (sum.error || br.error) return <ErrorBox error={sum.error || br.error} />;
   if (!sum.data || !br.data) return <><SkeletonCards /><div className="skeleton"><span /><span /><span /></div></>;
@@ -260,6 +378,11 @@ export default function Home() {
   const today = s.today;
   const lateBrands = br.data.brands.filter((b) => b.late_orders > 0);
   const toggle = (f) => setFilter((x) => (x === f ? "all" : f));
+  const reviewed = withOrder.filter((b) => approved[b.next_order.order_id]).length;
+  const tot = rows.reduce((t, b) => ({ cases: t.cases + (b.next_order.cases || 0), kg: t.kg + (b.next_order.kg || 0), cbm: t.cbm + (b.next_order.cbm || 0),
+    ctr: t.ctr + (b.next_order.containers_needed || 0) }), { cases: 0, kg: 0, cbm: 0, ctr: 0 });
+  const exportRows = () => toCSV(`next-orders-${today}.csv`, rows.map((b) => ({ brand: brandParts(b.brand).label, ...b.next_order, reviewed: approved[b.next_order.order_id] ? "yes" : "" })),
+    [...CSV.map(([k, l]) => [k, l]), ["reviewed", "Reviewed"]]);
 
   return (
     <div data-ready="home">
@@ -269,9 +392,14 @@ export default function Home() {
           <p>Sales data runs to the end of {monthLabel(s.data_through)}. Each order is sized to last about 3 months after it arrives;
             shipping takes 105 to 130 days, so the <Term k="safe">safe order date</Term> assumes 130.</p>
         </div>
-        <button className="btn" type="button" onClick={() => downloadCSV(`next-orders-${today}.csv`, rows.map((b) => ({ brand: b.brand, ...b.next_order })), CSV)}>
-          <Download className="ico-sm" />Export CSV
-        </button>
+        <div className="panel-side">
+          <span className="progress" role="status">
+            <span className="bar-track"><span className="bar-fill fill-ok" style={{ width: `${withOrder.length ? (reviewed / withOrder.length) * 100 : 0}%` }} /></span>
+            {fmt0(reviewed)} of {fmt0(withOrder.length)} reviewed
+            {canUndo && <button type="button" className="btn ghost" style={{ height: 26 }} onClick={undo}><Undo2 className="ico-sm" />Undo</button>}
+          </span>
+          <button className="btn" type="button" onClick={exportRows}><Download className="ico-sm" />Export CSV</button>
+        </div>
       </div>
 
       <div className={`callout ${s.gross_need ? "info" : "warn"}`} role="note">
@@ -292,6 +420,7 @@ export default function Home() {
       </div>
 
       <ShippingTimeline rows={rows} today={today} onOpen={setOpen} />
+      <Scrubber brands={rows.map((b) => b.brand)} onOpen={setOpen} />
 
       <section className="panel" aria-labelledby="orders-h">
         <header>
@@ -306,18 +435,20 @@ export default function Home() {
               {ORDER.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
             {filter !== "all" && <button type="button" className="btn ghost" onClick={() => setFilter("all")}>Clear card filter</button>}
+            <TableControls prefs={prefs} />
             <span className="small muted" role="status">{rows.length} of {withOrder.length} brands</span>
           </div>
         </header>
         {rows.length === 0 ? <EmptyState icon={ShoppingCart} title="No brand matches">Clear the filters to see every brand's next order.</EmptyState> : (
-          <div className="tbl-wrap tall" ref={tableRef} tabIndex={0} onKeyDown={onKey} role="region" aria-label="Next order for each brand">
-            <table className="tbl">
+          <div className={`tbl-wrap tall${prefs.compact ? " compact" : ""}`} ref={tableRef} tabIndex={0} onKeyDown={onKey} role="region" aria-label="Next order for each brand">
+            <table className="tbl sticky-first">
               <thead>
                 <tr>
                   <th scope="col">Brand</th><th scope="col">Status</th><th scope="col">Order by</th>
-                  <th scope="col" className="num">Cases</th><th scope="col" className="num hide-sm">Weight</th>
-                  <th scope="col" className="num hide-sm"><Term k="cbm">CBM</Term></th><th scope="col">Containers</th>
-                  <th scope="col" className="hide-sm">SKUs at risk <Tip text="Products below the 3-month floor now (red) or soon (amber), out of the brand's active products." /></th>
+                  <th scope="col" className="num">Cases</th>{prefs.show("weight") && <th scope="col" className="num hide-sm">Weight</th>}
+                  {prefs.show("cbm") && <th scope="col" className="num hide-sm"><Term k="cbm">CBM</Term></th>}{prefs.show("containers") && <th scope="col">Containers</th>}
+                  {prefs.show("risk") && <th scope="col" className="hide-sm">SKUs at risk <Tip text="Products below the 3-month floor now (red) or soon (amber), out of the brand's active products." /></th>}
+                  <th scope="col"><span className="sr-only">Why</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -325,7 +456,7 @@ export default function Home() {
                   const o = b.next_order;
                   const passed = o.order_by_safe < today;
                   return (
-                    <tr key={b.brand} className={`clickable${i === sel ? " sel" : ""}`} onClick={() => { setSel(i); setOpen(b.brand); }} aria-selected={i === sel}>
+                    <tr key={b.brand} className={`clickable${i === sel ? " sel" : ""}${pointed.includes(b.brand) ? " pointed" : ""}`} onClick={() => { setSel(i); setOpen(b.brand); }} aria-selected={i === sel}>
                       <th scope="row">
                         <BrandName name={b.brand} sub={`${o.products} product${o.products === 1 ? "" : "s"}${o.products_on_hold ? ` · ${o.products_on_hold} on hold` : ""}`} />
                       </th>
@@ -336,16 +467,30 @@ export default function Home() {
                         <div className="small muted">{passed ? "latest date; the safe date has passed" : `latest ${shortDate(o.order_by_latest, true)}`}</div>
                       </td>
                       <td className="num" style={{ fontWeight: 600 }}>{fmt0(o.cases)}</td>
-                      <td className="num hide-sm">{weight(o.kg)}</td>
-                      <td className="num hide-sm">{o.cbm != null ? fmt1(o.cbm) : "-"}</td>
-                      <td>{o.containers_needed != null
+                      {prefs.show("weight") && <td className="num hide-sm">{weight(o.kg)}</td>}
+                      {prefs.show("cbm") && <td className="num hide-sm">{o.cbm != null ? fmt1(o.cbm) : "-"}</td>}
+                      {prefs.show("containers") && <td>{o.containers_needed != null
                         ? <ContainerFill n={o.containers_needed} lastPct={o.last_container_fill_pct} cbm={o.cbm} estimated={o.cbm_estimated_pct > 0} />
-                        : o.containers != null ? <span className="muted">about {fmt1(o.containers)}</span> : <span className="muted">-</span>}</td>
-                      <td className="hide-sm"><RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} /></td>
+                        : o.containers != null ? <span className="muted">about {fmt1(o.containers)}</span> : <span className="muted">-</span>}</td>}
+                      {prefs.show("risk") && <td className="hide-sm"><RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} /></td>}
+                      <td><Why items={[["Sold per month", cases(b.monthly_cases)], ["On hand", b.on_hand_cases != null ? cases(b.on_hand_cases) : null],
+                        ["Months of stock", b.months_of_cover != null ? `${fmt1(b.months_of_cover)} months` : null], ["Floor", "3 months of sales"],
+                        ["Below the floor now", `${fmt0(b.below_floor_now || 0)} products`], ["Shipping", "105 to 130 days (safe date uses 130)"],
+                        ["Order", `${cases(o.cases)}, ${o.covers}`]]} /></td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">Total, {fmt0(rows.length)} brands</th><td /><td />
+                  <td className="num">{fmt0(tot.cases)}</td>
+                  {prefs.show("weight") && <td className="num hide-sm">{weight(tot.kg)}</td>}
+                  {prefs.show("cbm") && <td className="num hide-sm">{fmt1(tot.cbm)}</td>}
+                  {prefs.show("containers") && <td>{fmt0(tot.ctr)} containers</td>}
+                  {prefs.show("risk") && <td className="hide-sm" />}<td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -372,7 +517,7 @@ export default function Home() {
         </section>
       )}
 
-      <BrandDrawer brand={open} today={today} onClose={() => setOpen(null)} approved={approved} onApprove={approve} />
+      <BrandDrawer brand={open} today={today} onClose={() => setOpen(null)} approved={approved} onApprove={(id) => { approve(id); confirm(); }} />
     </div>
   );
 }

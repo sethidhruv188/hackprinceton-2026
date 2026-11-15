@@ -6,7 +6,8 @@ import { useSettings } from "../settings.jsx";
 import { getJSON } from "../api.js";
 import { cases, niceDate, sentence } from "../format.js";
 import { ErrorBox } from "../components.jsx";
-import { EmptyState, Pill, Sparkline, Term, brandParts, fmt0, relDays, shortDate } from "../ui.jsx";
+import { EmptyState, Pill, SavedViews, Sparkline, Term, brandParts, fmt0, relDays, shortDate, toCSV, useQueryState } from "../ui.jsx";
+import { Download } from "lucide-react";
 
 // Urgency groups, most urgent first. Classification uses the same fields and wording as before; only the order changed.
 const GROUPS = [
@@ -71,12 +72,13 @@ function HoverCard({ p, top }) {
 }
 
 export default function Products() {
-  const [q, setQ] = useState("");
-  const [term, setTerm] = useState("");
-  const [tab, setTab] = useState("all");
+  const [qUrl, setQUrl] = useQueryState("q", "");
+  const [q, setQ] = useState(qUrl);
+  const [term, setTerm] = useState(qUrl);
+  const [tab, setTab] = useQueryState("tab", "all");
   const [showDead, setShowDead] = useState(false);
   const [hover, setHover] = useState(null);
-  useEffect(() => { const t = setTimeout(() => setTerm(q.trim()), 200); return () => clearTimeout(t); }, [q]);
+  useEffect(() => { const t = setTimeout(() => { setTerm(q.trim()); setQUrl(q.trim()); }, 200); return () => clearTimeout(t); }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data, error, loading } = useData(`/products?show=all&limit=5000&q=${encodeURIComponent(term)}`);
   const { settings } = useSettings();
   const today = settings?.as_of || new Date().toISOString().slice(0, 10);   // the plan date (time travel aware)
@@ -112,6 +114,11 @@ export default function Products() {
         <div className="panel-side">
           <label className="search"><Search className="ico" aria-hidden="true" />
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, item code or brand" aria-label="Search products" /></label>
+          <SavedViews id="products" />
+          <button type="button" className="btn" disabled={!data} onClick={() => toCSV(`products-${today}.csv`, rows, [["product_id", "Item code"], ["name", "Product"],
+            [(p) => brandParts(p.brand).label, "Brand"], ["category", "Category"], [(p) => statusOf(p), "Status"], ["on_hand_cases", "On hand (cases)"],
+            [(p) => (data.stock_used ? (p.below_floor_now ? "now" : p.floor_dip_date || p.ok_until || "") : p.order_by_safe || ""), data?.stock_used ? "Stock OK until" : "Order by"],
+            ["next_month", "Next month"], ["next_cases", "Next month (cases)"]])}><Download className="ico-sm" />CSV</button>
           <span className="small muted" role="status" aria-live="polite">
             {!data ? "Loading" : `${fmt0(data.matched)} match${data.matched === 1 ? "" : "es"}${loading ? "…" : ""}${data.matched > data.products.length ? `, first ${fmt0(data.products.length)} shown` : ""}`}
           </span>

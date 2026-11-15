@@ -378,6 +378,25 @@ def projection(brand: str = "", months: int = 6):
                         months=M.records(g.round(1))))
 
 
+@router.get("/api/projection/brands")
+def projection_brands(months: int = 12):
+    """Per brand and month, from outputs/stock_projection.csv with no new orders: products projected below the 3-month
+    floor, projected stock and floor (cases). Counts and sums of existing outputs only; nothing is recalculated."""
+    M = _M()
+    pr = M.csv_out("stock_projection.csv", required=False)
+    bm = M.csv_out("product_brands.csv", required=False)
+    if not len(pr) or not len(bm):
+        return dict(available=False, months=[], brands=[])
+    t = pr.merge(bm[["product_id", "brand"]], on="product_id", how="inner")
+    ms = sorted(t["month"].unique())[:max(1, min(months, 12))]
+    t = t[t["month"].isin(ms)]
+    t = t.assign(below=t["projected_stock"] < t["floor_3_months"])
+    g = t.groupby(["brand", "month"]).agg(products=("product_id", "nunique"), below_floor=("below", "sum"),
+                                          projected_stock=("projected_stock", "sum"), floor=("floor_3_months", "sum")).reset_index()
+    brands = [dict(brand=b, months=M.records(x.drop(columns="brand").round(1))) for b, x in g.groupby("brand")]
+    return M.clean(dict(available=True, months=list(ms), brands=brands))
+
+
 # ---------------------------------------------------------------- ask the agent
 ASK_MODEL = None            # tests put a fake chat model here; None = the configured model (agent/llm.py)
 

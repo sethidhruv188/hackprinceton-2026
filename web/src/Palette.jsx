@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CornerDownLeft, Package, Search, Tags } from "lucide-react";
+import { Bot, CornerDownLeft, Package, Search, Tags } from "lucide-react";
 import { getJSON } from "./api.js";
 import { NAV } from "./Shell.jsx";
 import { brandParts } from "./ui.jsx";
@@ -49,14 +49,20 @@ export default function Palette({ open, onClose }) {
       .map((b) => ({ kind: "Brands", label: brandParts(b).label, hint: brandParts(b).code ? "item code" : "brand", href: `#/brand/${encodeURIComponent(b)}`, Icon: Tags }));
     const pr = products.slice(0, 10).map((p) => ({ kind: "Products", label: p.name, hint: `${p.product_id}${p.brand ? ` · ${brandParts(p.brand).label}` : ""}`,
       href: `#/product/${encodeURIComponent(p.product_id)}`, Icon: Package }));
-    return [...pages, ...br, ...pr];
+    // Anything else is a question for the agent (opens Ask with it filled in).
+    const ask = q.trim().length > 2 ? [{ kind: "Agent", label: `Ask the agent: "${q.trim()}"`, hint: "opens Ask", href: "#/ask", Icon: Bot, ask: q.trim() }] : [];
+    return [...pages, ...br, ...pr, ...ask];
   }, [q, brands, products]);
 
   useEffect(() => { setSel(0); }, [q]);
   useEffect(() => { list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [sel]);
 
   if (!open) return null;
-  const go = (it) => { if (!it) return; window.location.hash = it.href.slice(1); onClose(); };
+  const go = (it) => {
+    if (!it) return;
+    if (it.ask) { try { sessionStorage.setItem("ask-prefill", it.ask); } catch { /* blocked */ } }
+    window.location.hash = it.href.slice(1); onClose();
+  };
   const onKey = (e) => {
     if (e.key === "Escape") onClose();
     else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
@@ -69,7 +75,7 @@ export default function Palette({ open, onClose }) {
       <div className="palette" role="dialog" aria-modal="true" aria-label="Search">
         <div className="palette-input">
           <Search className="ico" aria-hidden="true" />
-          <input ref={input} autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Jump to a page, brand or product"
+          <input ref={input} autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Agent console: go to a page, brand or product, or ask a question"
                  role="combobox" aria-expanded="true" aria-controls="palette-list" aria-activedescendant={`pi-${sel}`} />
           <span className="kbd">esc</span>
         </div>

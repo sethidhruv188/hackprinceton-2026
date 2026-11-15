@@ -3,7 +3,9 @@ import { ArrowDown, ArrowUp, ArrowUpDown, LayoutGrid, Rows3, Search, Tags } from
 import { useData } from "../useData.js";
 import { cases } from "../format.js";
 import { ErrorBox } from "../components.jsx";
-import { BrandName, EmptyState, RiskBar, RunwayBar, StatusPill, Term, Tip, fmt0, relDays, shortDate } from "../ui.jsx";
+import { BrandName, EmptyState, Gauge, RiskBar, RunwayBar, SavedViews, StatusPill, Term, Tip, brandParts, fmt0, relDays, shortDate, toCSV, useQueryState } from "../ui.jsx";
+import { usePointed } from "../agent.jsx";
+import { Download } from "lucide-react";
 
 // Sort keys: [label, value getter, default direction]. Missing values always sort last.
 const COLS = {
@@ -43,10 +45,12 @@ function Th({ k, sort, setSort, className = "", children }) {
 
 export default function Brands() {
   const { data, error } = useData("/brands");
-  const [q, setQ] = useState("");
-  const [sort, setSort] = useState(["next", "asc"]);
-  const [view, setView] = useState(() => { try { return localStorage.getItem("brands-view") || "table"; } catch { return "table"; } });
-  const setV = (v) => { setView(v); try { localStorage.setItem("brands-view", v); } catch { /* blocked */ } };
+  const [q, setQ] = useQueryState("q", "");
+  const [sortQ, setSortQ] = useQueryState("sort", "next.asc");
+  const sort = sortQ.split(".");
+  const setSort = ([k, d]) => setSortQ(`${k}.${d}`);
+  const [view, setV] = useQueryState("view", "table");
+  const pointed = usePointed();
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -59,6 +63,9 @@ export default function Brands() {
   const today = data.today;
   const stock = data.stock_used;
   const go = (b) => { window.location.hash = `/brand/${encodeURIComponent(b)}`; };
+  const exportRows = () => toCSV(`brands-${today}.csv`, rows, [[(b) => brandParts(b.brand).label, "Brand"], [(b) => b.active_products ?? b.products, "Products"],
+    ["monthly_cases", "Sold per month (cases)"], ["on_hand_cases", "On hand (cases)"], ["months_of_cover", "Months of stock"], ["below_floor_now", "Below floor now"],
+    ["below_floor_soon", "Below floor soon"], [(b) => b.next_order?.status ?? "", "Next order"], [(b) => b.next_order?.order_by_safe ?? "", "Order by"], [(b) => b.next_order?.cases ?? "", "Cases"]]);
 
   return (
     <div data-ready="brands">
@@ -75,6 +82,8 @@ export default function Brands() {
             <button type="button" aria-pressed={view === "table"} onClick={() => setV("table")}><Rows3 className="ico-sm" />Table</button>
             <button type="button" aria-pressed={view === "grid"} onClick={() => setV("grid")}><LayoutGrid className="ico-sm" />Cards</button>
           </div>
+          <SavedViews id="brands" />
+          <button type="button" className="btn" onClick={exportRows}><Download className="ico-sm" />CSV</button>
           <span className="small muted" role="status">{rows.length} shown</span>
         </div>
       </div>
@@ -83,12 +92,17 @@ export default function Brands() {
         : view === "grid" ? (
           <div className="brand-grid stagger">
             {rows.map((b) => (
-              <button type="button" key={b.brand} className="card brand-card" onClick={() => go(b.brand)}>
+              <button type="button" key={b.brand} className={`card brand-card${pointed.includes(b.brand) ? " pointed" : ""}`} onClick={() => go(b.brand)}>
                 <div className="row">
                   <BrandName name={b.brand} sub={`${fmt0(b.active_products ?? b.products)} products · ${cases(b.monthly_cases)}/mo`} />
                   {b.next_order ? <StatusPill status={b.next_order.status} /> : <span className="pill neutral">No order</span>}
                 </div>
-                {stock && <RunwayBar months={b.months_of_cover} />}
+                {stock && (
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <Gauge months={b.months_of_cover} />
+                    <div className="small muted">{b.on_hand_cases != null ? `${fmt0(b.on_hand_cases)} cases on hand` : ""}<br />floor: 3 months</div>
+                  </div>
+                )}
                 <div>
                   <div className="small muted" style={{ marginBottom: 4 }}>SKUs below the 3-month floor</div>
                   <RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} />
@@ -102,7 +116,7 @@ export default function Brands() {
           </div>
         ) : (
           <div className="tbl-wrap tall">
-            <table className="tbl">
+            <table className="tbl sticky-first">
               <caption className="sr-only">Every brand with its sales pace, stock, SKU risk and next order. Click a column to sort.</caption>
               <thead>
                 <tr>
@@ -118,7 +132,7 @@ export default function Brands() {
               </thead>
               <tbody>
                 {rows.map((b) => (
-                  <tr key={b.brand} className="clickable" onClick={() => go(b.brand)}>
+                  <tr key={b.brand} className={`clickable${pointed.includes(b.brand) ? " pointed" : ""}`} onClick={() => go(b.brand)}>
                     <th scope="row"><BrandName name={b.brand} href={`#/brand/${encodeURIComponent(b.brand)}`} /></th>
                     <td className="num">{fmt0(b.active_products ?? b.products)}</td>
                     <td className="num">{b.monthly_cases != null ? fmt0(b.monthly_cases) : "-"}</td>

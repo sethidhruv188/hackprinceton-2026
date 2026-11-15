@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { AgentProvider } from "./agent.jsx";
+import Dock from "./robot/Dock.jsx";
 import Home from "./pages/Home.jsx";
 import Brand from "./pages/Brand.jsx";
 import Product from "./pages/Product.jsx";
@@ -16,15 +19,26 @@ import { NAV, ShellFrame } from "./Shell.jsx";
 import Palette, { usePaletteHotkeys } from "./Palette.jsx";
 import { ToastProvider, brandParts } from "./ui.jsx";
 
-// Tiny hash router: #/, #/orders, #/brand/<name>, #/product/<id>, #/diwali, #/questions, #/quality, ...
+// Tiny hash router: #/, #/orders, #/brand/<name>, #/product/<id>, ... The query part (#/orders?f=now) holds page state
+// (filters, sort, open drawer) and is ignored for routing. Page changes use the View Transitions API when available.
+const pathOf = (h) => (h || "#/").replace(/^#\/?/, "").split("?")[0];
 function useRoute() {
-  const [hash, setHash] = useState(window.location.hash || "#/");
+  const [path, setPath] = useState(pathOf(window.location.hash));
+  const cur = useRef(path);
   useEffect(() => {
-    const on = () => { setHash(window.location.hash || "#/"); window.scrollTo(0, 0); };
+    const on = () => {
+      const next = pathOf(window.location.hash);
+      if (next === cur.current) return;                 // only the query changed: same page
+      cur.current = next;
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (document.startViewTransition && !reduced) document.startViewTransition(() => flushSync(() => setPath(next)));
+      else setPath(next);
+      window.scrollTo(0, 0);
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  return hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  return path.split("/").map(decodeURIComponent);
 }
 
 const TITLES = Object.fromEntries(NAV.flatMap((g) => g.items.map(([href, label]) => [href, label])));
@@ -52,11 +66,14 @@ export default function App() {
   useEffect(() => { document.title = `${title} · Shakti Group Ordering`; }, [title]);
 
   return (
-    <ToastProvider>
-      <ShellFrame active={active} title={title} crumb={crumb} onSearch={() => setPalette(true)}>
-        <div className="page-enter" key={`${page}/${arg || ""}`}>{body}</div>
-      </ShellFrame>
-      <Palette open={palette} onClose={() => setPalette(false)} />
-    </ToastProvider>
+    <AgentProvider>
+      <ToastProvider>
+        <ShellFrame active={active} title={title} crumb={crumb} onSearch={() => setPalette(true)}>
+          <div className="page-enter" key={`${page}/${arg || ""}`}>{body}</div>
+        </ShellFrame>
+        {active !== "" && active !== "ask" && <Dock />}
+        <Palette open={palette} onClose={() => setPalette(false)} />
+      </ToastProvider>
+    </AgentProvider>
   );
 }

@@ -1,5 +1,6 @@
 // Shared UI building blocks for the redesign. Presentation only: every number passed in comes from the API.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertOctagon, AlertTriangle, CalendarClock, CheckCircle2, CircleSlash, Clock, Info, PauseCircle, X,
 } from "lucide-react";
@@ -29,7 +30,7 @@ export function useCountUp(target, ms = 650) {
 }
 
 export function CountUp({ value, format = fmt0 }) {
-  const v = useCountUp(value);
+  const v = useCountUp(value, window.__skipIntro ? 1 : 650);
   return <>{typeof value === "number" ? format(v) : value}</>;
 }
 
@@ -46,10 +47,19 @@ export function KPI({ icon: Icon, k, v, unit, d, tone = "", onClick, pressed, bi
       {d && <div className="d">{d}</div>}
     </>
   );
-  const cls = `kpi ${tone} ${big ? "big" : ""}`;
+  const cls = `kpi tilt ${tone} ${big ? "big" : ""}`;
   return onClick
-    ? <button type="button" className={cls} onClick={onClick} aria-pressed={!!pressed}>{body}</button>
-    : <div className={cls}>{body}</div>;
+    ? <TiltButton className={cls} onClick={onClick} pressed={pressed}>{body}</TiltButton>
+    : <TiltDiv className={cls}>{body}</TiltDiv>;
+}
+
+function TiltButton({ className, onClick, pressed, children }) {
+  const ref = useTilt();
+  return <button ref={ref} type="button" className={className} onClick={onClick} aria-pressed={!!pressed}>{children}</button>;
+}
+function TiltDiv({ className, children }) {
+  const ref = useTilt();
+  return <div ref={ref} className={className}>{children}</div>;
 }
 
 // ---------------------------------------------------------------- status pills: icon + text, never color alone
@@ -177,13 +187,15 @@ export function Drawer({ open, onClose, title, children, footer, labelledBy = "d
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.activeElement;
-    ref.current?.focus();
+    ref.current?.focus({ preventScroll: true });
+    ref.current?.querySelector(".drawer-body")?.scrollTo(0, 0);
     const on = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", on);
     return () => { window.removeEventListener("keydown", on); prev?.focus?.(); };
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Portal to <body>: page transitions create stacking contexts that would otherwise trap the drawer under the dock.
+  return createPortal(
     <>
       <div className="scrim" onClick={onClose} aria-hidden="true" />
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby={labelledBy} ref={ref} tabIndex={-1}>
@@ -194,7 +206,8 @@ export function Drawer({ open, onClose, title, children, footer, labelledBy = "d
         <div className="drawer-body">{children}</div>
         {footer && <div className="drawer-foot">{footer}</div>}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
 
@@ -262,4 +275,158 @@ export function shortDate(iso, withYear = false) {
   if (!iso) return "-";
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
+}
+
+// ================================================================ second pass helpers
+
+// Card tilts slightly toward the pointer with a sheen (CSS vars; off under reduced motion).
+export function useTilt(max = 5) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return undefined;
+    const move = (e) => {
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      el.style.setProperty("--ry", `${(x - 0.5) * max}deg`); el.style.setProperty("--rx", `${(0.5 - y) * max}deg`);
+      el.style.setProperty("--mx", `${x * 100}%`); el.style.setProperty("--my", `${y * 100}%`);
+    };
+    const leave = () => { el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg"); };
+    el.addEventListener("pointermove", move); el.addEventListener("pointerleave", leave);
+    return () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerleave", leave); };
+  }, [max]);
+  return ref;
+}
+
+// State kept in the URL hash query (#/orders?f=now&q=sun), so filters, sort, tab, search and open drawer survive reloads
+// and can be shared. Values are strings; defaults are omitted from the URL.
+export function useQueryState(key, dflt = "") {
+  const read = () => new URLSearchParams((window.location.hash.split("?")[1] || "")).get(key) ?? dflt;
+  const [v, setV] = useState(read);
+  useEffect(() => {
+    const on = () => setV(read());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = useCallback((nv) => {
+    const [path, qs] = window.location.hash.split("?");
+    const p = new URLSearchParams(qs || "");
+    const val = typeof nv === "function" ? nv(read()) : nv;
+    if (val == null || val === "" || val === dflt) p.delete(key); else p.set(key, val);
+    const next = `${path}${p.toString() ? `?${p}` : ""}`;
+    history.replaceState(null, "", next || "#/");
+    setV(val ?? dflt);
+  }, [key, dflt]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [v, set];
+}
+
+// Radial gauge: months of stock against the 3-month floor (tick), coloured like the status pills.
+export function Gauge({ months, floor = 3, max = 12, size = 64 }) {
+  if (months == null || Number.isNaN(months)) return <span className="muted small">no stock data</span>;
+  const r = size / 2 - 6, c = 2 * Math.PI * r, f = Math.min(1, Math.max(0, months) / max);
+  const col = months < floor ? "var(--crit-fill)" : months < floor + 1.5 ? "var(--warn-fill)" : "var(--ok-fill)";
+  const fa = (floor / max) * 2 * Math.PI;
+  return (
+    <span className="gauge" style={{ width: size, height: size }} title={`${fmt1(months)} months of stock; floor ${floor} months`}>
+      <svg width={size} height={size} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth="5" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"
+                strokeDasharray={`${c * f} ${c}`} style={{ transition: "stroke-dasharray 600ms var(--ease)", filter: `drop-shadow(0 0 4px ${col})` }} />
+        <line x1={size / 2 + (r - 7) * Math.cos(fa)} y1={size / 2 + (r - 7) * Math.sin(fa)} x2={size / 2 + (r + 7) * Math.cos(fa)} y2={size / 2 + (r + 7) * Math.sin(fa)}
+              stroke="var(--ink)" strokeWidth="2" />
+      </svg>
+      <b>{fmt1(months)}</b><small>months</small>
+    </span>
+  );
+}
+
+// "Why?" popover: the inputs the engine used for a recommendation, presented by the agent.
+export function Why({ items, title = "Why this recommendation" }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const on = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", on);
+    return () => document.removeEventListener("mousedown", on);
+  }, [open]);
+  return (
+    <span className="why" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="btn ghost" style={{ height: 24, padding: "0 8px", fontSize: 12 }} onClick={() => setOpen(!open)} aria-expanded={open}>Why?</button>
+      {open && (
+        <span className="why-pop" role="dialog" aria-label={title}>
+          <b style={{ color: "var(--agent)" }}>Agent:</b> {title}, from the engine's inputs.
+          <dl>{items.filter(([, v]) => v != null && v !== "").flatMap(([k, v]) => [<dt key={`k${k}`}>{k}</dt>, <dd key={`v${k}`}>{v}</dd>])}</dl>
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Column visibility menu + density toggle for tables; remembered per table in the browser.
+export function useTablePrefs(id, columns) {
+  const key = `tbl-${id}`;
+  const [p, setP] = useState(() => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } });
+  const save = (n) => { setP(n); try { localStorage.setItem(key, JSON.stringify(n)); } catch { /* blocked */ } };
+  const hidden = new Set(p.hidden || []);
+  return {
+    show: (c) => !hidden.has(c), compact: !!p.compact,
+    toggle: (c) => save({ ...p, hidden: hidden.has(c) ? [...hidden].filter((x) => x !== c) : [...hidden, c] }),
+    setCompact: (v) => save({ ...p, compact: v }), columns,
+  };
+}
+export function TableControls({ prefs }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const on = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", on);
+    return () => document.removeEventListener("mousedown", on);
+  }, [open]);
+  return (
+    <span className="rel" ref={ref} style={{ display: "inline-flex", gap: 8 }}>
+      <div className="seg" role="group" aria-label="Row density">
+        <button type="button" aria-pressed={!prefs.compact} onClick={() => prefs.setCompact(false)}>Comfortable</button>
+        <button type="button" aria-pressed={prefs.compact} onClick={() => prefs.setCompact(true)}>Compact</button>
+      </div>
+      <button type="button" className="btn" onClick={() => setOpen(!open)} aria-expanded={open}>Columns</button>
+      {open && (
+        <span className="colmenu" role="menu">
+          {prefs.columns.map(([k, label]) => (
+            <label key={k}><input type="checkbox" checked={prefs.show(k)} onChange={() => prefs.toggle(k)} />{label}</label>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Saved views (browser only): name -> current query string of the page.
+export function SavedViews({ id }) {
+  const key = `views-${id}`;
+  const [views, setViews] = useState(() => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } });
+  const persist = (v) => { setViews(v); try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* blocked */ } };
+  const current = window.location.hash.split("?")[1] || "";
+  const apply = (q) => { const path = window.location.hash.split("?")[0]; window.location.hash = `${path.slice(1)}${q ? `?${q}` : ""}`; };
+  return (
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+      <select aria-label="Saved views" value="" onChange={(e) => { if (e.target.value === "__del") persist([]); else if (e.target.value !== "") apply(e.target.value); }}>
+        <option value="">Saved views{views.length ? ` (${views.length})` : ""}</option>
+        {views.map((v) => <option key={v.name} value={v.q}>{v.name}</option>)}
+        {views.length > 0 && <option value="__del">Clear saved views</option>}
+      </select>
+      <button type="button" className="btn ghost" disabled={!current} title={current ? "Save the current filters as a view" : "Change a filter first"}
+              onClick={() => { const name = window.prompt("Name this view"); if (name) persist([...views.filter((v) => v.name !== name), { name, q: current }]); }}>Save view</button>
+    </span>
+  );
+}
+
+// CSV of exactly what the table shows (current filters and sort).
+export function toCSV(filename, rows, columns) {
+  const esc = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const text = [columns.map((c) => esc(c[1])).join(","), ...rows.map((r) => columns.map((c) => esc(typeof c[0] === "function" ? c[0](r) : r[c[0]])).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }

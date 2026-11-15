@@ -38,3 +38,18 @@ def test_products_page_size_cap(demo_full):
         small = AR.products(show="all", limit=3)
     assert len(r["products"]) == r["matched"] == r["total"]
     assert len(small["products"]) == 3                       # the default contract (limit) still applies
+
+
+def test_projection_by_brand_counts_products_below_the_floor(demo_full):
+    d = demo_full
+    pr = pd.read_csv(d["out"] / "stock_projection.csv", dtype={"product_id": str})
+    pb = pd.read_csv(d["out"] / "product_brands.csv", dtype={"product_id": str})
+    with use(d["data"], d["out"], TODAY):
+        r = AR.projection_brands(months=12)
+    assert r["available"] and r["months"] == sorted(pr["month"].unique())[:12]
+    b = next(x for x in r["brands"] if x["brand"] == "Sunrise")
+    m0 = b["months"][0]
+    ids = set(pb.loc[pb["brand"] == "Sunrise", "product_id"])
+    rows = pr[(pr["product_id"].isin(ids)) & (pr["month"] == m0["month"])]
+    assert m0["below_floor"] == int((rows["projected_stock"] < rows["floor_3_months"]).sum())
+    assert m0["products"] == rows["product_id"].nunique()

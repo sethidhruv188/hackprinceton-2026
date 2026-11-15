@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useData } from "../useData.js";
 import { ErrorBox, Loading, Panel, Source, Table, Tag, Toolbar } from "../components.jsx";
 import { monthLabel } from "../format.js";
+import { toCSV } from "../ui.jsx";
+import { Download, Search } from "lucide-react";
 
 // "Nov 15, 2026, 00:28" in the viewer's time zone; the log never carries message text or phone numbers.
 const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -21,7 +23,11 @@ const ADJ_STATE = {
 export default function Activity() {
   const { data, error } = useData("/activity?limit=500");
   const [source, setSource] = useState("all");
-  const events = useMemo(() => (data ? data.events.filter((e) => source === "all" || e.source === source) : []), [data, source]);
+  const [q, setQ] = useState("");
+  const events = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return data ? data.events.filter((e) => (source === "all" || e.source === source) && (!n || `${e.what} ${e.detail}`.toLowerCase().includes(n))) : [];
+  }, [data, source, q]);
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading what="Loading activity" />;
   const counts = Object.entries(data.counts).sort((a, b) => b[1] - a[1]);
@@ -84,6 +90,10 @@ export default function Activity() {
               <option value="research">Research</option>
             </select>
           </label>
+          <label className="search" style={{ alignSelf: "end" }}><Search className="ico" aria-hidden="true" />
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events" aria-label="Search events" /></label>
+          <button type="button" className="btn" style={{ alignSelf: "end" }} onClick={() => toCSV("activity.csv", events, [["at", "When (UTC)"], ["source", "From"], ["channel", "Channel"], ["what", "What"], ["detail", "Detail"]])}>
+            <Download className="ico-sm" />CSV</button>
           <span className="count" role="status">{events.length.toLocaleString("en-US")} shown</span>
         </Toolbar>
         <Table id="act" caption="Agent, owner and research events">

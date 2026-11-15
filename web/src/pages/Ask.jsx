@@ -4,6 +4,8 @@ import { useData } from "../useData.js";
 import { useSettings } from "../settings.jsx";
 import { ErrorBox, Loading, Source, Tag } from "../components.jsx";
 import { brandParts } from "../ui.jsx";
+import { brandsIn, useAgent } from "../agent.jsx";
+import Robot from "../robot/Robot.jsx";
 
 const BASE_SUGGESTIONS = [
   "Which brands will stock out before Diwali?",
@@ -121,6 +123,7 @@ export default function Ask() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [revealText, setRevealText] = useState(null);   // the reply to animate (only replies given on this page)
+  const agent = useAgent();
   const end = useRef(null);
   const box = useRef(null);
   const { data: br } = useData("/brands");
@@ -153,15 +156,22 @@ export default function Ask() {
     setText("");
     setPending([{ who: "owner", channel: "dashboard", text: t, at: new Date().toISOString() }]);
     setBusy(true);
+    agent.flag("thinking", true);
     try {
       const r = await ask(t);
       if (r.error) setPending((p) => [...p, { who: "error", text: r.error }]);
-      else { setDetails((d) => ({ ...d, [r.reply]: { tools: r.tools, sources: r.sources } })); setRevealText(r.reply); setPending([]); }
+      else {
+        setDetails((d) => ({ ...d, [r.reply]: { tools: r.tools, sources: r.sources } }));
+        setRevealText(r.reply); agent.flag("speaking", true); setPending([]);
+        agent.point(brandsIn(r.reply, brands.map((b) => b.name)));
+        agent.speak(r.reply);
+      }
       await load();
     } catch (e) {
       setPending((p) => [...p, { who: "error", text: String(e.message || e) }]);
     } finally {
       setBusy(false);
+      agent.flag("thinking", false);
       box.current?.focus();
     }
   };
@@ -170,8 +180,10 @@ export default function Ask() {
 
   return (
     <div className="chat" data-ready="ask">
-      <header className="page-head">
+      <header className="page-head hero hud" style={{ gridTemplateColumns: "220px minmax(0,1fr)", padding: "8px 20px", marginBottom: 16 }}>
+        <div style={{ height: 220 }}><Robot variant="hero" onClick={() => box.current?.focus()} /></div>
         <div>
+          <p className="hero-title">Agent</p>
           <h2>Ask the agent</h2>
           <p className="sub muted small" style={{ margin: 0 }}>
             {status.available ? <>Model {status.model}. Web search {status.research?.web_search ? "on" : "off"}.</> : status.reason}
@@ -200,7 +212,7 @@ export default function Ask() {
         )}
         {messages.map((m, i) => <Message key={`${m.at}-${i}`} m={m} brands={brands}
                                          reveal={m.who === "agent" && m.text === revealText && i === messages.length - 1}
-                                         onRevealed={() => setRevealText(null)} />)}
+                                         onRevealed={() => { setRevealText(null); agent.flag("speaking", false); }} />)}
         {busy && <div className="thinking" role="status"><span className="typing" aria-hidden="true"><i /><i /><i /></span>Working on it</div>}
         <div ref={end} />
       </div>
@@ -211,6 +223,7 @@ export default function Ask() {
           <textarea id="ask-text" ref={box} value={text} maxLength={2000} disabled={!status.available}
                     placeholder={status.available ? "Type a question. Enter to send, Shift+Enter for a new line." : "The agent is offline"}
                     onChange={(e) => setText(e.target.value)}
+                    onFocus={() => agent.flag("listening", true)} onBlur={() => agent.flag("listening", false)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
         </div>
         <div className="side">

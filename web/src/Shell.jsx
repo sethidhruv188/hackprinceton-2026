@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity, BarChart3, CalendarDays, ChevronsLeft, ChevronsRight, Globe2, HelpCircle, LayoutDashboard, Menu,
-  MessageSquare, Moon, Package, Search, ShoppingCart, Sprout, Sun, Tags,
+  MessageSquare, Moon, Package, Search, ShoppingCart, Sprout, Sun, Tags, Volume2, VolumeX,
 } from "lucide-react";
+import { useAgent } from "./agent.jsx";
+import { MOOD_LABEL } from "./robot/Robot.jsx";
 import { useSettings } from "./settings.jsx";
 import { niceDate } from "./format.js";
 import { getJSON } from "./api.js";
@@ -31,7 +33,7 @@ export function useLayout() {
 
 // Light / dark, remembered per browser (falls back to light when storage is blocked).
 export function useTheme() {
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("theme") || "light"; } catch { return "light"; } });
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("theme") || "dark"; } catch { return "dark"; } });
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem("theme", theme); } catch { /* storage blocked */ }
@@ -46,7 +48,7 @@ function useCollapsed() {
 }
 
 // Badge counts from the API: orders to place now, questions still unanswered.
-function useBadges() {
+export function useBadges() {
   const { rev } = useSettings();
   const [b, setB] = useState({});
   useEffect(() => {
@@ -55,6 +57,7 @@ function useBadges() {
       if (!live) return;
       setB({
         orders: s.status === "fulfilled" ? s.value.orders_now : null,
+        dataThrough: s.status === "fulfilled" ? s.value.data_through : null,
         questions: q.status === "fulfilled" ? q.value.questions.filter((x) => x.answer == null || x.answer === "").length : null,
       });
     });
@@ -86,6 +89,7 @@ function Mark() {
 
 export function Sidebar({ active, collapsed, setCollapsed, open, onNavigate, theme, toggleTheme }) {
   const badges = useBadges();
+  const { sound, setSound } = useAgent();
   return (
     <aside className={`sidebar${open ? " open" : ""}`} id="sidebar" aria-label="Sidebar">
       <a className="brandbar" href="#/" aria-label="Shakti Group, overview" onClick={onNavigate}>
@@ -116,6 +120,9 @@ export function Sidebar({ active, collapsed, setCollapsed, open, onNavigate, the
       <div className="sidebar-foot">
         <button type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun className="ico" /> : <Moon className="ico" />}<span className="txt">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+        </button>
+        <button type="button" onClick={() => setSound(!sound)} aria-pressed={sound} aria-label={sound ? "Turn interface sounds off" : "Turn interface sounds on"}>
+          {sound ? <Volume2 className="ico" /> : <VolumeX className="ico" />}<span className="txt">{sound ? "Sounds on" : "Sounds off"}</span>
         </button>
         <button type="button" className="hide-sm" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
           {collapsed ? <ChevronsRight className="ico" /> : <ChevronsLeft className="ico" />}<span className="txt">Collapse</span>
@@ -171,7 +178,11 @@ function useRealData(settings, update) {
 export function TopBar({ title, crumb, wide, onMenu, onSearch }) {
   const { settings, update, error } = useSettings();
   const agent = useAgentStatus();
+  const { mood } = useAgent();
+  const badges = useBadges();
   useRealData(settings, update);
+  const stale = settings && settings.as_of > settings.run_date
+    ? Math.round((Date.parse(settings.as_of) - Date.parse(settings.run_date)) / 86400000) : 0;
   return (
     <>
       <header className="topbar">
@@ -182,10 +193,10 @@ export function TopBar({ title, crumb, wide, onMenu, onSearch }) {
         </div>
         <div className="top-actions">
           {agent && (
-            <span className="pill-btn hide-sm" style={{ cursor: "default" }} title={agent.reason || agent.model}>
+            <a className="pill-btn hide-sm" href="#/ask" title={agent.reason || agent.model}>
               <span className={`dot ${agent.available ? "live" : "off"}`} aria-hidden="true" />
-              {agent.available ? "Agent online" : "Agent offline"}
-            </span>
+              {agent.available ? `Agent: ${MOOD_LABEL[mood]}` : "Agent offline"}
+            </a>
           )}
           <button type="button" className="pill-btn" onClick={onSearch} aria-label="Search (Command K)">
             <Search className="ico-sm" aria-hidden="true" /><span className="hide-sm">Search</span>
@@ -194,6 +205,14 @@ export function TopBar({ title, crumb, wide, onMenu, onSearch }) {
           {settings && <AsOf settings={settings} update={update} />}
         </div>
       </header>
+      {settings && (
+        <div className="status-strip" role="status" aria-label="System status">
+          <span>Engine run <b>{niceDate(settings.run_date, null, { relative: false })}</b></span>
+          {badges.dataThrough && <span>Sales data to end of <b>{new Date(`${badges.dataThrough}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })}</b></span>}
+          {agent && <span><i className={`dot ${agent.available ? "live" : "off"}`} aria-hidden="true" />Agent {agent.available ? "online" : "offline"}</span>}
+          {stale > 0 && <span className="stale">The engine run is {stale} day{stale === 1 ? "" : "s"} older than the viewing date: re-run the engine for fresh numbers</span>}
+        </div>
+      )}
       {error && <p className="asof-note" role="alert">{String(error.message || error)}</p>}
       {settings?.as_of_set && (
         <p className="asof-note" role="note">

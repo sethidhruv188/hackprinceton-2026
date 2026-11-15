@@ -2,7 +2,10 @@ import { AlertOctagon, ArrowRight, Boxes, Container, ShoppingCart, Tags } from "
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useData } from "../useData.js";
 import { monthLabel, shortMonth } from "../format.js";
+import { useState } from "react";
 import { BrandName, EmptyState, KPI, SkeletonCards, StatusPill, Term, fmt0, fmt1, relDays, shortDate } from "../ui.jsx";
+import Robot from "../robot/Robot.jsx";
+import Briefing from "../robot/Briefing.jsx";
 import { niceDate, cases, pct } from "../format.js";
 
 const n0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -131,6 +134,7 @@ function Figure({ k, v, unit, d, status }) {
 // Executive summary: the four numbers a CEO asks first, stock coverage ahead, and the five most urgent actions.
 const URGENT = { "Too late for full lead time: expedite": 0, "Order now": 1, "Order this month": 2, "Coming up": 3 };
 function Executive({ today }) {
+  const [openK, setOpenK] = useState(null);
   const sum = useData("/summary");
   const br = useData("/brands");
   const proj = useData("/projection?months=6");
@@ -143,15 +147,56 @@ function Executive({ today }) {
     .sort((a, b) => (URGENT[a.next_order.status] ?? 9) - (URGENT[b.next_order.status] ?? 9)
       || a.next_order.order_by_safe.localeCompare(b.next_order.order_by_safe)).slice(0, 5);
   const p = proj.data;
+  const nowBrands = br.data.brands.filter((b) => b.next_order?.status === "Order now");
+  const DETAIL = {
+    cases: ["Cases to order now, by brand", nowBrands.map((b) => [b.brand, `${fmt0(b.next_order.cases)} cases`])],
+    containers: ["Containers, by brand (each brand shipped alone)", nowBrands.map((b) => [b.brand, b.next_order.containers_needed != null ? `${fmt0(b.next_order.containers_needed)} container${b.next_order.containers_needed === 1 ? "" : "s"}` : "size unknown"])],
+    cbm: ["Volume, by brand", nowBrands.map((b) => [b.brand, b.next_order.cbm != null ? `${fmt1(b.next_order.cbm)} CBM` : "size unknown"])],
+    risk: ["Products below the 3-month floor now, by brand", [...atRisk].sort((a, b) => b.below_floor_now - a.below_floor_now).map((b) => [b.brand, `${fmt0(b.below_floor_now)} of ${fmt0(b.active_products ?? b.products)} products`])],
+  };
+  const tgl = (k) => setOpenK((x) => (x === k ? null : k));
   return (
     <>
+      <section className="hero hud scan" aria-label="Agent briefing">
+        <span className="scanline" aria-hidden="true" />
+        <Robot variant="hero" />
+        <div>
+          <p className="hero-title">Today's briefing</p>
+          <Briefing />
+          {actions.length > 0 && (
+            <div className="actions-list" style={{ marginTop: 8 }}>
+              {actions.slice(0, 3).map((b) => (
+                <a key={b.brand} className="action" href={`#/orders?open=${encodeURIComponent(b.brand)}`}>
+                  <BrandName name={b.brand} />
+                  <span style={{ minWidth: 0 }}><span className="t">{fmt0(b.next_order.cases)} cases</span>
+                    <span className="s"> · order by {shortDate(b.next_order.order_by_safe, true)} ({relDays(b.next_order.order_by_safe, today)})</span></span>
+                  <StatusPill status={b.next_order.status} />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
       <div className="kpis stagger">
-        <KPI big icon={ShoppingCart} tone="crit" k="Cases to order now" v={s.orders_now_cases} unit="cases" d={`${fmt0(s.orders_now)} brand orders`} />
-        <KPI big icon={Container} tone="info" k="Containers" v={s.orders_now_containers ?? null} unit="containers" d="If each brand ships alone" />
+        <KPI big icon={ShoppingCart} tone="crit" k="Cases to order now" v={s.orders_now_cases} unit="cases" d={`${fmt0(s.orders_now)} brand orders · click for detail`} onClick={() => tgl("cases")} pressed={openK === "cases"} />
+        <KPI big icon={Container} tone="info" k="Containers" v={s.orders_now_containers ?? null} unit="containers" d="If each brand ships alone" onClick={() => tgl("containers")} pressed={openK === "containers"} />
         <KPI big icon={Boxes} k={<>Volume (<Term k="cbm">CBM</Term>)</>} v={s.orders_now_cbm != null ? Math.round(s.orders_now_cbm) : null} unit="CBM"
-             d={s.cbm_estimated_pct > 0 ? `${fmt0(s.cbm_estimated_pct)}% from estimated case sizes` : "From case sizes"} />
+             d={s.cbm_estimated_pct > 0 ? `${fmt0(s.cbm_estimated_pct)}% from estimated case sizes` : "From case sizes"} onClick={() => tgl("cbm")} pressed={openK === "cbm"} />
         <KPI big icon={AlertOctagon} tone={atRisk.length ? "warn" : "ok"} k="Brands at risk" v={atRisk.length} unit={`of ${br.data.brands.length}`}
-             d={`${fmt0(skusNow)} products below the 3-month floor now`} />
+             d={`${fmt0(skusNow)} products below the 3-month floor now`} onClick={() => tgl("risk")} pressed={openK === "risk"} />
+        {openK && (
+          <div className="kpi-detail" role="region" aria-label={DETAIL[openK][0]}>
+            <div className="card-title" style={{ marginBottom: 10 }}>{DETAIL[openK][0]}</div>
+            {DETAIL[openK][1].length === 0 ? <p className="note">None.</p> : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
+                {DETAIL[openK][1].map(([b, v]) => (
+                  <a key={b} href={`#/brand/${encodeURIComponent(b)}`} className="action" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                    <BrandName name={b} /><b className="num">{v}</b></a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="grid-2" style={{ marginBottom: 20 }}>
         <section className="panel" aria-labelledby="cov-h">
@@ -165,12 +210,12 @@ function Executive({ today }) {
                   <ComposedChart data={p.months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="month" tickFormatter={shortMonth} tickLine={false} axisLine={false} />
-                    <YAxis tickLine={false} axisLine={false} width={56} tickFormatter={(v) => fmt0(v)} />
+                    <YAxis tickLine={false} axisLine={false} width={64} tickFormatter={(v) => fmt0(v)} label={{ value: "cases", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} />
                     <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
                       <div className="tip"><strong>{monthLabel(label)}</strong>{payload.map((x) => <div key={x.dataKey}>{x.name}: {fmt0(x.value)} cases</div>)}</div>) : null} />
                     <Area dataKey="projected_with_suggested_order" name="With the suggested orders" stroke="var(--ok-fill)" fill="var(--ok-bg)" strokeWidth={2} />
                     <Line dataKey="projected_stock" name="With no new orders" stroke="var(--chart-1)" strokeDasharray="4 3" dot={false} strokeWidth={1.5} />
-                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} />
+                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} className="floor-line" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -214,12 +259,6 @@ export default function Overview() {
 
   return (
     <div data-ready="overview">
-      <div className="page-head">
-        <div>
-          <h2>Overview</h2>
-          <p>As of {niceDate(today, null, { relative: false })}{demo ? " · demo data" : ""}. What to order now, how much room it needs, and where stock is thin.</p>
-        </div>
-      </div>
       <Executive today={today} />
       <section className="panel" aria-labelledby="replay-h">
         <header>
