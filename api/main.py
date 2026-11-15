@@ -390,6 +390,7 @@ def questions():
                        detail=f"It has less than 6 months of sales, so the plan uses its average selling month "
                               f"({c / 12:,.0f} cases a month). Is that about right?"))
     qs += stock_questions(names)
+    qs += harvest_questions(names)
     ans = answers()
     for q in qs:
         a = ans.get(q["id"])
@@ -459,6 +460,50 @@ def stock_questions(names):
             qs.append(dict(id=f"harvest:{rule}", type="Annual buy", product_id=None, impact_cases=round(yearly, 0),
                            question=f"Is {rule.replace('_', ' ')} bought once a year after the harvest? In which months do you order it, and when does it arrive?",
                            detail=f"{len(g)} products match (about {yearly:,.0f} cases a year). Until you confirm, they are ordered like other products."))
+    return qs
+
+
+def harvest_questions(names):
+    """Harvest calendar rows the owner hasn't confirmed (harvest:<commodity>_<country>) and products the
+    commodity map couldn't place (commodity:<PID>), from outputs/harvest_plan.csv and commodity_unmapped.csv."""
+    qs = []
+    hp = csv_out("harvest_plan.csv", required=False)
+    if len(hp) and "confirmed" in hp:
+        todo = hp[(hp["confirmed"].astype(str) == "no") & hp["rule_id"].notna()
+                  & (pd.to_numeric(hp["products"], errors="coerce") > 0)]
+        todo = todo.assign(impact=pd.to_numeric(todo["yearly_cases"], errors="coerce").fillna(0)).nlargest(TOP_PER_TYPE, "impact")
+        for r in todo.itertuples():
+            crop, country = str(r.commodity).replace("_", " "), r.source_country
+            hint = f" Item names suggest {r.origin_hints}." if isinstance(r.origin_hints, str) and r.origin_hints else ""
+            if isinstance(r.harvest_window, str) and r.harvest_window:
+                q = f"Is {crop} bought from {country} once a season, from the new crop (harvest {r.harvest_window})?"
+                d = (f"Source: {r.source_url} ({r.confidence} confidence). If yes, we order by {r.order_by} "
+                     f"({int(r.quantity_cases):,} cases, to last until the next harvest arrives). If the months are wrong, "
+                     f"write them in the note, e.g. 'harvest Oct-Dec'. No = keep ordering it the regular way.{hint}")
+            else:
+                q = f"Is {crop} bought from {country} by harvest? Which months is the harvest there?"
+                d = (f"We found no source that states the harvest months. If yes, write them in the note, e.g. "
+                     f"'harvest Oct-Dec'. No = keep ordering it the regular way.{hint}")
+            qs.append(dict(id=f"harvest:{r.rule_id}", type="Harvest season", product_id=None, impact_cases=float(r.impact),
+                           question=q, detail=d))
+    un = csv_out("commodity_unmapped.csv", required=False)
+    if len(un) and "reason" in un:
+        prof = csv_out("product_profiles.csv", required=False)
+        typ = prof.set_index("product_id")["typical_monthly_cases"] if len(prof) else pd.Series(dtype=float)
+        un = un.assign(impact=12 * un["product_id"].map(typ).fillna(0)).nlargest(TOP_PER_TYPE, "impact")
+        for r in un.itertuples():
+            name = names.get(r.product_id, r.name)
+            cands = [c.replace("_", " ") for c in str(r.candidates).split("|") if c and c != "nan"]
+            if r.reason == "name matches several commodities":
+                q = f"Which crop is {name}: {' or '.join(cands)}?"
+            elif r.reason == "mixed pack of several crops":
+                q = f"{name} mixes several crops. Should it be bought by harvest with one of them? Which?"
+            else:
+                q = f"Is {name} a harvest crop (bought once a season, from the new crop)? If yes, which one?"
+            qs.append(dict(id=f"commodity:{r.product_id}", type="Which crop", product_id=r.product_id,
+                           impact_cases=round(float(r.impact), 1), question=q,
+                           detail="Write the crop in the note (e.g. toor, moong, chana, basmati, almond, cashew). "
+                                  "No = it isn't a harvest crop: keep ordering it the regular way."))
     return qs
 
 

@@ -46,7 +46,7 @@ APPLIED, CONFIRMED, NO_CHANGE = "applied", "confirmed", "no change"
 NEEDS_INGEST, NOT_UNDERSTOOD, CONFLICT = "needs ingest", "note not understood", "conflict: override file wins"
 NOT_FOUND, UNKNOWN, MALFORMED, SUPERSEDED = "not found", "unknown question", "malformed row", "superseded"
 
-PID_TYPES = {"hold", "new", "units", "cbm"}
+PID_TYPES = {"hold", "new", "units", "cbm", "commodity"}
 MONTH_TYPES = {"gap", "oneoff"}
 FIXED = {"stock": {"on_order", "units"}, "container": {"limits"}}
 YM = re.compile(r"^\d{4}-\d{2}$")
@@ -536,6 +536,29 @@ def parse_harvest_months(note):
         return None
     a = m.group(1)[:3].title()
     return a, (m.group(2)[:3].title() if m.group(2) else a)
+
+
+def commodity_overrides(answers, cmap):
+    """commodity:PID answers -> {product_id: commodity, or None = not a harvest crop}. yes + the crop in the note
+    (a commodity id such as 'toor' or any of its keywords, e.g. 'pigeon pea'), matched against
+    config/commodity_map.csv in file order; no = not a harvest crop (stays on the regular rule)."""
+    out = {}
+    for _, r in answers.of("commodity").iterrows():
+        if r["answer"] == "not sure":
+            answers.record(r, NO_CHANGE, "not sure: stays on the regular rule; the question stays open")
+        elif r["answer"] == "no":
+            out[r["key"]] = None
+            answers.record(r, APPLIED, "not a harvest crop: ordered with the regular rule")
+        else:
+            note = str(r["note"])
+            hit = next((c for c, rx in zip(cmap["commodity"], cmap["rx"])
+                        if re.search(rf"\b{re.escape(c.replace('_', ' '))}\b|\b{re.escape(c)}\b", note, re.IGNORECASE) or rx.search(note)), None)
+            if hit is None:
+                answers.record(r, NOT_UNDERSTOOD, "no known crop in the note (e.g. toor, moong, basmati, almond)")
+            else:
+                out[r["key"]] = hit
+                answers.record(r, APPLIED, f"mapped to {hit}")
+    return out
 
 
 def harvest_calendar(calendar, answers):

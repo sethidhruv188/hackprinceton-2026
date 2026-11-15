@@ -224,6 +224,8 @@ def prepare(products, answers, today, config_rules=None, cmap=None, calendar=Non
     cal = load_calendar() if calendar is None else calendar
     cal = A.harvest_calendar(cal, answers)
     cfg = A.harvest_rules(SP.harvest_rules() if config_rules is None else config_rules, answers, skip=set(cal["rule_id"]))
+    if overrides is None:
+        overrides = A.commodity_overrides(answers, cmap)
     mapped, unmapped = map_products(products, cmap, overrides)
     claimed, _ = SP.harvest_members(products, cfg)
     cal["usable"] = (cal["confirmed"] == "yes") & (cal["harvest_start_month"] != "")
