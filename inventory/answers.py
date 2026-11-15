@@ -46,7 +46,7 @@ APPLIED, CONFIRMED, NO_CHANGE = "applied", "confirmed", "no change"
 NEEDS_INGEST, NOT_UNDERSTOOD, CONFLICT = "needs ingest", "note not understood", "conflict: override file wins"
 NOT_FOUND, UNKNOWN, MALFORMED, SUPERSEDED = "not found", "unknown question", "malformed row", "superseded"
 
-PID_TYPES = {"hold", "new", "units", "cbm", "commodity"}
+PID_TYPES = {"hold", "new", "units", "cbm", "commodity", "supplier", "alert"}
 MONTH_TYPES = {"gap", "oneoff"}
 FIXED = {"stock": {"on_order", "units"}, "container": {"limits"}}
 YM = re.compile(r"^\d{4}-\d{2}$")
@@ -559,6 +559,46 @@ def commodity_overrides(answers, cmap):
                 out[r["key"]] = hit
                 answers.record(r, APPLIED, f"mapped to {hit}")
     return out
+
+
+def supplier_answers(answers, leads):
+    """supplier:LEAD_ID answers -> leads with the owner's status and note. yes = confirmed supplier, no = rejected,
+    not sure = no change; a note is kept as owner_note in every case."""
+    leads = leads.copy()
+    for _, r in answers.of("supplier").iterrows():
+        hit = leads["lead_id"] == r["key"]
+        if not hit.any():
+            answers.record(r, NOT_FOUND, "no such supplier lead")
+            continue
+        if r["note"].strip():
+            leads.loc[hit, "owner_note"] = r["note"].strip()
+        if r["answer"] == "yes":
+            leads.loc[hit, "status"] = "confirmed"
+            answers.record(r, APPLIED, "confirmed supplier: ranked first for its commodities")
+        elif r["answer"] == "no":
+            leads.loc[hit, "status"] = "rejected"
+            answers.record(r, APPLIED, "rejected: listed, never ranked")
+        else:
+            answers.record(r, NO_CHANGE, "not sure: stays an unverified lead" + ("; note kept" if r["note"].strip() else ""))
+    return leads
+
+
+def alert_answers(answers, alerts):
+    """alert:ALERT_ID answers -> alerts with the owner's status. yes = still relevant (stays until it expires),
+    no = dismissed (ignored from now on), not sure = no change."""
+    alerts = alerts.copy()
+    for _, r in answers.of("alert").iterrows():
+        hit = alerts["alert_id"] == r["key"]
+        if not hit.any():
+            answers.record(r, NOT_FOUND, "no such country alert")
+        elif r["answer"] == "no":
+            alerts.loc[hit, "status"] = "dismissed"
+            answers.record(r, APPLIED, "alert dismissed: no longer lowers that country's sources")
+        elif r["answer"] == "yes":
+            answers.record(r, CONFIRMED, "still relevant: keeps lowering that country's sources until it expires")
+        else:
+            answers.record(r, NO_CHANGE, "not sure: the alert stays as it is")
+    return alerts
 
 
 def harvest_calendar(calendar, answers):

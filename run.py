@@ -313,7 +313,7 @@ bo, bl = brand_orders.run(a.data, OUT, today, int(a.cover_months), use_stock, an
 say("8. Brand orders", f"{len(bo)} brand orders ({bo['brand'].nunique()} brands), {len(bl)} lines -> "
     f"{OUT}/brand_orders.csv, brand_order_lines.csv, brands.csv; statuses: "
     + ", ".join(f"{k} {v}" for k, v in bo["status"].value_counts().items()))
-src = sourcing.run(a.data, OUT, today)
+src = sourcing.run(a.data, OUT, today, answers=ans)
 say("9. Sourcing", f"{len(src['summary'])} products at risk, {src['leads']} supplier leads, {src['alerts']} active country alerts "
     f"-> outputs/sourcing_options.csv, sourcing_option_lines.csv" + (f" ({src['note']})" if src["note"] else ""))
 answer_report = ans.report()

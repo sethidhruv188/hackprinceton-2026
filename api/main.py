@@ -391,6 +391,7 @@ def questions():
                               f"({c / 12:,.0f} cases a month). Is that about right?"))
     qs += stock_questions(names)
     qs += harvest_questions(names)
+    qs += sourcing_questions(names)
     ans = answers()
     for q in qs:
         a = ans.get(q["id"])
@@ -505,6 +506,43 @@ def harvest_questions(names):
                            detail="Write the crop in the note (e.g. toor, moong, chana, basmati, almond, cashew). "
                                   "No = it isn't a harvest crop: keep ordering it the regular way."))
     return qs
+
+
+def sourcing_questions(names):
+    """Unverified supplier leads that could serve an at-risk product (supplier:<LEAD_ID>) and active country alerts
+    (alert:<ALERT_ID>), from outputs/sourcing_option_lines.csv, supplier_leads_used.csv and country_alerts_active.csv."""
+    qs = []
+    lines = csv_out("sourcing_option_lines.csv", required=False)
+    if not len(lines) or "lead_id" not in lines:
+        return qs
+    prof = csv_out("product_profiles.csv", required=False)
+    typ = prof.set_index("product_id")["typical_monthly_cases"] if len(prof) else pd.Series(dtype=float)
+    lines = lines.assign(yearly=12 * lines["product_id"].map(typ).fillna(0))
+    leads = csv_out("supplier_leads_used.csv", required=False)
+    if len(leads) and "status" in leads:
+        todo = leads[leads["status"] == "unverified_lead"]
+        for l in todo.itertuples():
+            mine = lines[lines["lead_id"] == l.lead_id]
+            if mine.empty:
+                continue                      # only leads that could help an at-risk product
+            prods = ", ".join(sorted({names.get(p, p) for p in mine["product_id"]}))[:160]
+            qs.append(dict(id=f"supplier:{l.lead_id}", type="Supplier lead", product_id=None,
+                           impact_cases=round(float(mine.drop_duplicates("product_id")["yearly"].sum()), 1),
+                           question=f"Is {l.company} ({l.country}; lists {str(l.commodities).replace(';', ', ')}) a supplier you "
+                                    f"buy from, or would buy from?",
+                           detail=f"Could help with: {prods}. Found on {l.found_on} at {l.source_url}. Unverified: nobody has "
+                                  f"contacted them. Yes = confirmed supplier (ranked first); No = not a supplier (never "
+                                  f"suggested again). Your note is kept with the lead."))
+    alerts = csv_out("country_alerts_active.csv", required=False)
+    if len(alerts) and "alert_id" in alerts:
+        for a in alerts.itertuples():
+            hit = lines[lines["alert"].fillna("").str.contains(str(a.issue), regex=False)]
+            qs.append(dict(id=f"alert:{a.alert_id}", type="Country alert", product_id=None,
+                           impact_cases=round(float(hit.drop_duplicates("product_id")["yearly"].sum()), 1),
+                           question=f"Is this still a problem: {a.issue} ({a.country}, {a.commodity})?",
+                           detail=f"Reported {a.reported_on} ({a.source_url}); expires {a.expires_on}. While active, sources in "
+                                  f"{a.country} rank below the others. Yes = keep it; No = dismiss it."))
+    return qs[:2 * TOP_PER_TYPE]
 
 
 class Answer(BaseModel):

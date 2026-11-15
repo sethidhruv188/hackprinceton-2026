@@ -84,8 +84,9 @@ def _read(path, columns):
     return pd.read_csv(path, dtype=str, keep_default_na=False).reindex(columns=columns).fillna("")
 
 
-def load_leads(data_dir):
-    """Leads with a `label`. In the real data folder demo rows are dropped; in data_demo/ non-demo rows are an error."""
+def load_leads(data_dir, answers=None):
+    """Leads with a `label`, after the owner's supplier:LEAD_ID answers. In the real data folder demo rows are dropped;
+    in data_demo/ non-demo rows are an error."""
     leads = _read(Path(data_dir) / "supplier_leads.csv", LEAD_COLUMNS)
     demo = leads["is_demo"].map(_yes)
     if _is_demo_dir(data_dir) and (~demo).any():
@@ -93,6 +94,9 @@ def load_leads(data_dir):
     if _is_real(data_dir):
         leads = leads[~demo]
     leads = leads.copy()
+    if answers is not None:
+        from . import answers as A
+        leads = A.supplier_answers(answers, leads)
     leads["status"] = leads["status"].where(leads["status"].isin(LEAD_STATUSES), "unverified_lead")
     leads["label"] = leads["status"].map(TIER_LABEL)
     leads["commodity_list"] = leads["commodities"].map(lambda s: [c.strip() for c in str(s).split(";") if c.strip()])
@@ -100,12 +104,16 @@ def load_leads(data_dir):
     return leads.reset_index(drop=True)
 
 
-def load_alerts(data_dir, today):
-    """Active, unexpired alerts. Demo alerts never count in the real data folder."""
+def load_alerts(data_dir, today, answers=None):
+    """Active, unexpired alerts, after the owner's alert:ALERT_ID answers (no = dismissed). Demo alerts never count
+    in the real data folder."""
     al = _read(Path(data_dir) / "country_alerts.csv", ALERT_COLUMNS)
     if _is_real(data_dir):
         al = al[~al["is_demo"].map(_yes)]
     al = al.copy()
+    if answers is not None:
+        from . import answers as A
+        al = A.alert_answers(answers, al)
     rep = pd.to_datetime(al["reported_on"], errors="coerce")
     exp = pd.to_datetime(al["expires_on"], errors="coerce").fillna(rep + pd.Timedelta(days=ALERT_DAYS))
     al["expires"] = exp
@@ -423,7 +431,7 @@ def options_for(product, commodity, today, cal, leads, alerts, need):
     return o.reindex(columns=OPTION_COLUMNS)
 
 
-def run(data_dir, out_dir, today, calendar=None):
+def run(data_dir, out_dir, today, calendar=None, answers=None):
     """outputs/sourcing_options.csv (one row per at-risk product) and sourcing_option_lines.csv (ranked sources)."""
     out_dir, today = Path(out_dir), pd.Timestamp(today).normalize()
     risk, note = products_at_risk(out_dir, today)
@@ -434,7 +442,7 @@ def run(data_dir, out_dir, today, calendar=None):
     brand = brands.set_index("product_id")["brand"].to_dict() if len(brands) else {}
     com = mapped[mapped["harvest"] != "no"].set_index("product_id")["commodity"].to_dict() if len(mapped) else {}
     cal = H.load_calendar() if calendar is None else calendar
-    leads, alerts = load_leads(data_dir), load_alerts(data_dir, today)
+    leads, alerts = load_leads(data_dir, answers), load_alerts(data_dir, today, answers)
     need = needs(out_dir, today, mapped)
     summary, lines = [], []
     for r in risk.itertuples():
@@ -475,6 +483,7 @@ def run(data_dir, out_dir, today, calendar=None):
     s.to_csv(out_dir / "sourcing_options.csv", index=False)
     L.to_csv(out_dir / "sourcing_option_lines.csv", index=False)
     alerts[alerts["active"]][ALERT_COLUMNS].to_csv(out_dir / "country_alerts_active.csv", index=False)
+    leads[LEAD_COLUMNS].to_csv(out_dir / "supplier_leads_used.csv", index=False)       # after guards and owner answers
     return dict(summary=s, lines=L, note=note, leads=len(leads), alerts=int(alerts["active"].sum()))
 
 
@@ -485,6 +494,7 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--today", default=None)
     a = ap.parse_args()
-    res = run(a.data, a.out, a.today or pd.Timestamp.today())
+    from . import answers as A
+    res = run(a.data, a.out, a.today or pd.Timestamp.today(), answers=A.load(a.data))
     print(f"{len(res['summary'])} at-risk products, {res['leads']} leads, {res['alerts']} active alerts -> {a.out}/sourcing_options.csv"
           + (f" ({res['note']})" if res["note"] else ""))
