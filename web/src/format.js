@@ -52,12 +52,26 @@ export function pct(x, digits = 1) {
   return `${x.toFixed(digits)}%`;
 }
 
+// Order statuses: shown as text, with a restrained color class (never color alone, never an icon).
 export const STATUS = {
-  "Order now": { cls: "now", icon: "!" },
-  "Order this month": { cls: "month", icon: "•" },
-  "Coming up": { cls: "coming", icon: "→" },
-  "Too late for full lead time: expedite": { cls: "late", icon: "⚠" },
+  "Order now": { cls: "st-red", short: "Order now" },
+  "Order this month": { cls: "st-amber", short: "Order this month" },
+  "Coming up": { cls: "st-grey", short: "Coming up" },
+  "Too late for full lead time: expedite": { cls: "st-red", short: "Too late: expedite" },
 };
+
+export function titleCase(s) {
+  return String(s ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function sentence(s) {
+  const t = String(s ?? "").toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+export function host(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url || ""; }
+}
 
 // Lead with the date that can still be met.
 export function orderBy(o, today) {

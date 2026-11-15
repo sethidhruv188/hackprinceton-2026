@@ -5,8 +5,10 @@ import Product from "./pages/Product.jsx";
 import Diwali from "./pages/Diwali.jsx";
 import Questions from "./pages/Questions.jsx";
 import Quality from "./pages/Quality.jsx";
+import Overview from "./pages/Overview.jsx";
+import { NAV, Sidebar, TopBar, useLayout } from "./Shell.jsx";
 
-// Tiny hash router: #/, #/brand/<name>, #/product/<id>, #/diwali, #/questions, #/quality
+// Tiny hash router: #/, #/orders, #/brand/<name>, #/product/<id>, #/diwali, #/questions, #/quality, ...
 function useRoute() {
   const [hash, setHash] = useState(window.location.hash || "#/");
   useEffect(() => {
@@ -14,34 +16,42 @@ function useRoute() {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
-  return parts;
+  return hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
 }
 
-const NAV = [
-  ["", "What to order"], ["diwali", "Diwali"], ["questions", "Questions for you"], ["quality", "How good is the forecast"],
-];
+function NotYet({ name }) {
+  return (
+    <div className="placeholder-page" data-ready={`todo-${name}`}>
+      <p>This page is built in the next step, once the layout and the Overview are approved.</p>
+    </div>
+  );
+}
+
+const TITLES = Object.fromEntries(NAV.flatMap((g) => g.items.map(([href, label]) => [href, label])));
 
 export default function App() {
   const [page, arg] = useRoute();
-  let body;
-  if (page === "brand") body = <Brand name={arg} />;
-  else if (page === "product") body = <Product id={arg} />;
+  const wide = useLayout();
+  let body, active = page || "", title;
+  if (page === "brand") { body = <Brand name={arg} />; active = "brands"; title = arg; }
+  else if (page === "product") { body = <Product id={arg} />; active = "products"; title = "Product"; }
+  else if (page === "orders") body = <Home />;
   else if (page === "diwali") body = <Diwali />;
   else if (page === "questions") body = <Questions />;
   else if (page === "quality") body = <Quality />;
-  else body = <Home />;
-  const active = page === "brand" || page === "product" ? "" : page || "";
+  else if (["brands", "products", "harvest", "sourcing", "ask", "activity"].includes(page)) body = <NotYet name={page} />;
+  else { body = <Overview />; active = ""; }
+  title = title || TITLES[active] || "Overview";
+
+  useEffect(() => { document.title = `${title} · Shakti Group USA`; }, [title]);
+
   return (
-    <>
-      <header className="top">
-        <nav aria-label="Main">
-          {NAV.map(([p, label]) => (
-            <a key={p} href={`#/${p}`} aria-current={active === p ? "page" : undefined}>{label}</a>
-          ))}
-        </nav>
-      </header>
-      <main>{body}</main>
-    </>
+    <div className="shell">
+      <Sidebar active={active} wide={wide} id="sidebar" />
+      <div className="main">
+        <TopBar title={title} menuId="sidebar" wide={wide} />
+        <main className="content">{body}</main>
+      </div>
+    </div>
   );
 }

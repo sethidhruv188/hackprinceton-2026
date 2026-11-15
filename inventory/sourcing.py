@@ -119,13 +119,13 @@ def load_alerts(data_dir, today, answers=None):
     real-news alerts from data/country_alerts.csv are shown too (public information) for the demo's commodities."""
     al = _read(Path(data_dir) / "country_alerts.csv", ALERT_COLUMNS)
     if _is_real(data_dir):
-        al = al[~al["is_demo"].map(_yes)]
+        al = al[~al["is_demo"].map(_yes).astype(bool)]
     elif _is_demo_dir(data_dir) and (REAL_DATA / "country_alerts.csv").exists():
         real = _read(REAL_DATA / "country_alerts.csv", ALERT_COLUMNS)
-        real = real[~real["is_demo"].map(_yes) & real["commodity"].isin(_demo_commodities(data_dir) | {"all"})]
+        real = real[(~real["is_demo"].map(_yes).astype(bool)) & real["commodity"].isin(_demo_commodities(data_dir) | {"all"})]
         al = pd.concat([al, real[~real["alert_id"].isin(al["alert_id"])]], ignore_index=True)
     al = al.copy()
-    al["label"] = np.where(al["is_demo"].map(_yes), "demo", "real news")
+    al["label"] = np.where(al["is_demo"].map(_yes).astype(bool), "demo", "real news") if len(al) else pd.Series(dtype=str)
     if answers is not None:
         from . import answers as A
         al = A.alert_answers(answers, al)

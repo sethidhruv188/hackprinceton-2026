@@ -152,9 +152,45 @@ async def _answer(model, thread_id, text, role, channel, data, wall_clock, callb
         except Exception as e:                  # anything else: honest reply, logged
             log(data, channel, thread_id, role, "error", f"{type(e).__name__}: {e}")
             return dict(raw=ERROR_REPLY, reply=ERROR_REPLY, error=f"{type(e).__name__}: {str(e)[:300]}")
-    msgs = [m for m in result["messages"] if getattr(m, "type", "") == "ai" and _text(m)]
+    turn = this_turn(result["messages"])
+    msgs = [m for m in turn if getattr(m, "type", "") == "ai" and _text(m)]
     raw = (_text(msgs[-1]) if msgs else "") or "I don't have an answer for that."
-    return dict(raw=raw, reply=finish(raw, channel))
+    tools, sources = tools_used(turn), sources_cited(turn, raw)
+    log(data, channel, thread_id, role, "answered", ", ".join(t["name"] + (f":{t['subagent']}" if t.get("subagent") else "")
+                                                                 for t in tools))
+    return dict(raw=raw, reply=finish(raw, channel), tools=tools, sources=sources)
+
+
+def this_turn(messages):
+    """The messages of the latest turn: everything after the last human message (the thread keeps its history)."""
+    idx = [i for i, m in enumerate(messages) if getattr(m, "type", "") == "human"]
+    return messages[idx[-1] + 1:] if idx else list(messages)
+
+
+def tools_used(turn):
+    """[{name, subagent?}] for every tool the main agent called this turn, in order (names only, no arguments)."""
+    out = []
+    for m in turn:
+        for c in getattr(m, "tool_calls", None) or []:
+            t = dict(name=c.get("name", "?"))
+            if t["name"] == "task":
+                t["subagent"] = (c.get("args") or {}).get("subagent_type", "")
+            out.append(t)
+    return out
+
+
+URL = re.compile(r"https?://[^\s)\]>\"'|,]+")
+
+
+def sources_cited(turn, raw):
+    """URLs seen in this turn's tool results and in the reply, first seen first, without duplicates."""
+    seen = []
+    for text in [_text(m) for m in turn if getattr(m, "type", "") == "tool"] + [raw]:
+        for u in URL.findall(text):
+            u = u.rstrip(".;:")
+            if u not in seen:
+                seen.append(u)
+    return seen[:20]
 
 
 def finish(raw, channel):
@@ -170,8 +206,9 @@ def answer(thread_id, text, **kw):
 
 def answer_detail(thread_id, text, today=None, role="guest", channel="imessage", data=None, out=None, model=None,
                   wall_clock=WALL_CLOCK_S, callbacks=None):
-    """Like answer(), returning dict(reply, raw, error?): raw is the model's own text before markdown stripping and
-    the length cap (the evals check its format)."""
+    """Like answer(), returning dict(reply, raw, tools, sources, error?): raw is the model's own text before markdown
+    stripping and the length cap (the evals check its format); tools lists the tools called this turn (names only) and
+    sources the URLs seen in tool results and the reply."""
     d0, o0 = default_dirs()
     data, out = data or d0, out or o0
     with _LOCK, context.use(data, out, today, role=role, channel=channel) as ctx:

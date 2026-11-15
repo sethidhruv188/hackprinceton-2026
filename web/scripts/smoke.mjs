@@ -43,7 +43,7 @@ const firstBrand = brands.brands.find((b) => b.next_order)?.brand;
 const detail = await api(`/brands/${encodeURIComponent(firstBrand)}`);
 const line = detail.orders.flatMap((o) => o.lines).find((l) => !l.on_hold);
 const routes = [
-  ["home", "#/"], ["brand", `#/brand/${encodeURIComponent(firstBrand)}`],
+  ["overview", "#/"], ["home", "#/orders"], ["brand", `#/brand/${encodeURIComponent(firstBrand)}`],
   ["product", `#/product/${encodeURIComponent(line.product_id)}`], ["diwali", "#/diwali"],
   ["questions", "#/questions"], ["quality", "#/quality"],
 ];
@@ -66,7 +66,7 @@ for (const width of [1280, 390]) {
     const err = await page.$(".error");
     const text = await page.evaluate(() => document.querySelector("main")?.innerText.slice(0, 300) || "");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-    await page.screenshot({ path: `${SHOTS}/${name}-${width}.png`, fullPage: false });
+    await page.screenshot({ path: `${SHOTS}/${name}-${width}.png`, fullPage: process.env.FULL === "1" });
     results.push({ page: name, width, loaded: ok && !err, horizontal_scroll: overflow,
                    problems: problems.slice(before), first_text: text.replace(/\s+/g, " ").slice(0, 120) });
   }

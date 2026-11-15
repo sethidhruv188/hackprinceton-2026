@@ -24,6 +24,8 @@ from inventory import schema  # noqa: E402
 from inventory.forecast import CAL, month_kind  # noqa: E402
 
 app = FastAPI(title="Shakti ordering dashboard (local)")
+from api.agent_routes import router as _new_routes  # noqa: E402  (overview, settings, ask, sourcing, harvest, activity)
+app.include_router(_new_routes)
 ANSWER_FIELDS = ["question_id", "answer", "note", "timestamp"]
 TOP_PER_TYPE = 30
 
