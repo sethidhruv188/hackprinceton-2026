@@ -91,6 +91,37 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(scope="session")
+def demo_full(demo_run, tmp_path_factory):
+    """The demo with stock, demo owner answers, fake leads and the DEMO alert, and the stock-mode outputs (brand
+    orders, harvest plan, sourcing options) rebuilt: what `run.py --generate --demo-harvest` gives, without re-training.
+    Read-only for tests: copy it (copy_demo) before writing."""
+    import shutil
+    from inventory import brand_orders as BO, sourcing as S, synthetic, answers as A
+    base = tmp_path_factory.mktemp("demo_full")
+    data, out = base / "data", base / "outputs"
+    shutil.copytree(demo_run["data"], data)
+    shutil.copytree(demo_run["out"], out)
+    (data / "owner_answers.csv").unlink(missing_ok=True)
+    synthetic.generate(base / "gen", write_stock=True)
+    shutil.copy(base / "gen" / "stock.csv", data / "stock.csv")
+    synthetic.write_demo_answers(data)
+    synthetic.write_demo_sourcing(data)
+    BO.run(data, out, "2026-11-14")
+    S.run(data, out, "2026-11-14", answers=A.load(data))
+    return dict(data=data, out=out)
+
+
+@pytest.fixture
+def copy_demo(demo_full, tmp_path):
+    """A private, writable copy of demo_full."""
+    import shutil
+    data, out = tmp_path / "data", tmp_path / "outputs"
+    shutil.copytree(demo_full["data"], data)
+    shutil.copytree(demo_full["out"], out)
+    return dict(data=data, out=out)
+
+
+@pytest.fixture(scope="session")
 def demo_run(tmp_path_factory):
     """Run the whole pipeline once on synthetic data in a temp folder: {data, out, models} paths.
     --sim-from 2026-06: a short simulation (warm-up Jun-Sep, scored Oct 2026) still writes every output the
