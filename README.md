@@ -12,7 +12,8 @@ pip install -r requirements.txt
 python run.py --generate --today 2026-11-14                # synthetic demo -> data_demo/, outputs_demo/, models_demo/
 python run.py --source real --today 2026-11-14              # real data already ingested into data/
 python run.py --source real --ingest --today 2026-11-14     # rebuild data/ from data/raw/sales/*.xlsx first
-pip install -r requirements-dev.txt && python -m pytest  # tests (fake data only, no network; 60 s per test)
+pip install -r requirements-dev.txt && python -m pytest  # full suite (fake data only, no network; 60 s per test): before every commit
+python -m pytest -m "not slow"                          # everyday check, under a minute (skips tests that run the demo pipeline)
 ```
 
 The same commands work in PowerShell on Windows.

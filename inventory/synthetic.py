@@ -83,7 +83,8 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
                 if cat == "beverages" and i == 0 and m == pd.Timestamp("2025-07-01"):
                     sold, status = int(demand * 0.4), "stockout"
                 rows.append(dict(product_id=p, month=m.strftime("%Y-%m"), units_sold=int(sold), status=status))
-            on_hand = int(base * rng.uniform(0.5, 2.0))
+            cover = rng.uniform(COMFORTABLE[0], COMFORTABLE[1])        # months of stock: comfortably above the floor
+            on_hand = int(base * DEMO_LOW_STOCK.get(p, cover))
             held = 800 if "Schezwan" in name else 0
             expiry = (months[-1] + pd.DateOffset(months=1) + pd.Timedelta(days=int(rng.uniform(10, shelf)))).date()
             stock.append(dict(product_id=p, on_hand_units=0 if held else on_hand, held_units=held,
@@ -98,7 +99,7 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
             lam = base * (1.25 if m in diwali else 1.0)
             rows.append(dict(product_id=pid_, month=m.strftime("%Y-%m"), units_sold=int(hr.poisson(lam * hr.gamma(8, 1 / 8))),
                              status="sellable"))
-        cover = hr.uniform(2.0, 5.0)
+        cover = hr.uniform(COMFORTABLE[0], COMFORTABLE[1])
         if pid_ in DEMO_LOW_STOCK:                     # the demo's at-risk product (sourcing demo)
             cover = DEMO_LOW_STOCK[pid_]
         stock.append(dict(product_id=pid_, on_hand_units=int(base * cover), held_units=0,
@@ -146,7 +147,13 @@ DEMO_ANSWERS = [
 ]
 
 
-DEMO_LOW_STOCK = {"AN402": 0.5}         # months of stock on hand: the demo cashew is at risk
+# Demo stock: most products hold 12-16 months of base demand (the 3-month floor plus the 130-day lead time is about 7.3
+# months of forecast demand, and demo demand has grown since the base level),
+# so they stay above the floor until a restock lands); these few are low on purpose, so about 6 are at risk.
+COMFORTABLE = (12.0, 16.0)
+DEMO_LOW_STOCK = {"AN402": 0.5,          # cashew: the sourcing / DEMO alert story
+                  "AD201": 2.5,          # toor: runs out before its harvest order lands (bridge flag)
+                  "P012": 1.5, "P027": 2.0, "P041": 1.0, "P055": 2.5}   # a few everyday products
 
 # Clearly fake supplier leads and one fake alert for the sourcing demo (is_demo = yes; example.org sources).
 DEMO_LEADS = [

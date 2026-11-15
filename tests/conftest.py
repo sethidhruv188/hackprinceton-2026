@@ -78,6 +78,18 @@ def panel_products():
 ROOT = Path(__file__).resolve().parent.parent
 
 
+SLOW_TIMEOUT = 300      # the demo pipeline takes 1-2 minutes (more on a throttled CPU) and is charged to the first test
+
+
+def pytest_collection_modifyitems(config, items):
+    """Every test that uses the demo pipeline (demo_run) is slow: `pytest -m "not slow"` skips them. Slow tests get
+    SLOW_TIMEOUT seconds instead of the 60 s default (pytest-timeout charges fixture setup to the first test)."""
+    for item in items:
+        if "demo_run" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.slow)
+            item.add_marker(pytest.mark.timeout(SLOW_TIMEOUT))
+
+
 @pytest.fixture(scope="session")
 def demo_run(tmp_path_factory):
     """Run the whole pipeline once on synthetic data in a temp folder: {data, out, models} paths.
