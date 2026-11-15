@@ -1,71 +1,71 @@
-product_id,name,category,shelf_life_days,lead_time_days,unit_cost,primary_source,backup_source
-P001,Sunrise Schezwan Noodles 150g (FDA hold demo),noodles,270,45,5.26,Country A,Country B
-P002,Lotus Noodles item 2,noodles,270,45,2.96,Country A,Country B
-P003,Peacock Noodles item 3,noodles,270,45,1.35,Country A,Country B
-P004,Monsoon Noodles item 4,noodles,270,45,2.76,Country A,Country B
-P005,Banyan Noodles item 5,noodles,270,45,5.18,Country A,Country B
-P006,Sunrise Noodles item 6,noodles,270,45,4.65,Country A,Country B
-P007,Lotus Noodles item 7,noodles,270,45,1.38,Country A,Country B
-P008,Peacock Noodles item 8,noodles,270,45,5.38,Country A,Country B
-P009,Monsoon Sweets item 1,sweets,60,20,5.73,Country A,Country B
-P010,Banyan Sweets item 2,sweets,60,20,1.6,Country A,Country B
-P011,Sunrise Sweets item 3,sweets,60,20,5.3,Country A,Country B
-P012,Lotus Sweets item 4,sweets,60,20,2.29,Country A,Country B
-P013,Peacock Sweets item 5,sweets,60,20,3.66,Country A,Country B
-P014,Monsoon Sweets item 6,sweets,60,20,5.23,Country A,Country B
-P015,Banyan Sweets item 7,sweets,60,20,3.68,Country A,Country B
-P016,Sunrise Sweets item 8,sweets,60,20,2.67,Country A,Country B
-P017,Lotus Snacks item 1,snacks,120,30,3.15,Country A,Country B
-P018,Peacock Snacks item 2,snacks,120,30,3.74,Country A,Country B
-P019,Monsoon Snacks item 3,snacks,120,30,3.51,Country A,Country B
-P020,Banyan Snacks item 4,snacks,120,30,5.78,Country A,Country B
-P021,Sunrise Snacks item 5,snacks,120,30,4.01,Country A,Country B
-P022,Lotus Snacks item 6,snacks,120,30,1.6,Country A,Country B
-P023,Peacock Snacks item 7,snacks,120,30,3.71,Country A,Country B
-P024,Monsoon Snacks item 8,snacks,120,30,5.78,Country A,Country B
-P025,Banyan Snacks item 9,snacks,120,30,5.04,Country A,Country B
-P026,Sunrise Snacks item 10,snacks,120,30,4.18,Country A,Country B
-P027,Lotus Garam Masala 100g (unrecorded gap demo),spices,365,60,4.48,Country A,Country B
-P028,Peacock Spices item 2,spices,365,60,3.71,Country A,Country B
-P029,Monsoon Spices item 3,spices,365,60,4.98,Country A,Country B
-P030,Banyan Spices item 4,spices,365,60,4.12,Country A,Country B
-P031,Sunrise Spices item 5,spices,365,60,4.47,Country A,Country B
-P032,Lotus Spices item 6,spices,365,60,3.51,Country A,Country B
-P033,Peacock Spices item 7,spices,365,60,5.51,Country A,Country B
-P034,Monsoon Spices item 8,spices,365,60,3.94,Country A,Country B
-P035,Banyan Spices item 9,spices,365,60,4.23,Country A,Country B
-P036,Sunrise Spices item 10,spices,365,60,4.83,Country A,Country B
-P037,Lotus Beverages item 1,beverages,180,30,5.86,Country A,Country B
-P038,Peacock Beverages item 2,beverages,180,30,5.32,Country A,Country B
-P039,Monsoon Beverages item 3,beverages,180,30,3.5,Country A,Country B
-P040,Banyan Beverages item 4,beverages,180,30,4.0,Country A,Country B
-P041,Sunrise Beverages item 5,beverages,180,30,3.09,Country A,Country B
-P042,Lotus Beverages item 6,beverages,180,30,5.35,Country A,Country B
-P043,Peacock Beverages item 7,beverages,180,30,5.89,Country A,Country B
-P044,Monsoon Beverages item 8,beverages,180,30,2.39,Country A,Country B
-P045,Banyan Frozen item 1,frozen,270,30,2.67,Country A,Country B
-P046,Sunrise Frozen item 2,frozen,270,30,5.02,Country A,Country B
-P047,Lotus Frozen item 3,frozen,270,30,2.22,Country A,Country B
-P048,Peacock Frozen item 4,frozen,270,30,5.54,Country A,Country B
-P049,Monsoon Frozen item 5,frozen,270,30,3.77,Country A,Country B
-P050,Banyan Frozen item 6,frozen,270,30,5.63,Country A,Country B
-P051,Sunrise Rice Flour item 1,rice_flour,365,45,5.37,Country A,Country B
-P052,Lotus Rice Flour item 2,rice_flour,365,45,5.6,Country A,Country B
-P053,Peacock Rice Flour item 3,rice_flour,365,45,4.35,Country A,Country B
-P054,Monsoon Rice Flour item 4,rice_flour,365,45,1.79,Country A,Country B
-P055,Banyan Rice Flour item 5,rice_flour,365,45,2.06,Country A,Country B
-P056,Sunrise Rice Flour item 6,rice_flour,365,45,1.95,Country A,Country B
-P057,Lotus Bulk Catering item 1,bulk_catering,180,30,2.15,Country A,Country B
-P058,Peacock Bulk Catering item 2,bulk_catering,180,30,3.28,Country A,Country B
-P059,Monsoon Bulk Catering item 3,bulk_catering,180,30,4.17,Country A,Country B
-P060,Banyan Bulk Catering item 4,bulk_catering,180,30,2.03,Country A,Country B
-AD201,Sunrise Toor Dal 4 lb X 10,lentils_beans,365,130,4.19,Country A,Country B
-AD202,Sunrise Moong Dal 4 lb X 10,lentils_beans,365,130,3.6,Country A,Country B
-BD301,Chana Dal 55 Lb X,lentils_beans,365,130,3.57,Country A,Country B
-AD299,Sunrise Panchratna Dal 2 lb X 20,lentils_beans,365,130,4.64,Country A,Country B
-AN401,Lotus Almond 14 oz X 20,nuts_dry_fruits,365,130,4.85,Country A,Country B
-AN402,Lotus Cashew Whole 14 oz X 20,nuts_dry_fruits,365,130,5.37,Country A,Country B
-AN403,Lotus Green Raisin 14 oz X 20,nuts_dry_fruits,365,130,1.56,Country A,Country B
-AN499,Lotus Alo Bukhara 14 oz X 20,nuts_dry_fruits,365,130,3.03,Country A,Country B
-AR501,Peacock Basmati Rice 10 lb X 4,rice_flour,365,130,3.78,Country A,Country B
-AR502,Peacock Idli Rice 20 lb X 2,rice_flour,365,130,1.88,Country A,Country B
+product_id,name,category,shelf_life_days,lead_time_days,unit_cost,primary_source,backup_source,case_weight_kg
+P001,Sunrise Schezwan Noodles 150g (FDA hold demo),noodles,270,45,5.26,Country A,Country B,6.0
+P002,Lotus Noodles item 2,noodles,270,45,2.96,Country A,Country B,6.0
+P003,Peacock Noodles item 3,noodles,270,45,1.35,Country A,Country B,6.0
+P004,Monsoon Noodles item 4,noodles,270,45,2.76,Country A,Country B,6.0
+P005,Banyan Noodles item 5,noodles,270,45,5.18,Country A,Country B,6.0
+P006,Sunrise Noodles item 6,noodles,270,45,4.65,Country A,Country B,6.0
+P007,Lotus Noodles item 7,noodles,270,45,1.38,Country A,Country B,6.0
+P008,Peacock Noodles item 8,noodles,270,45,5.38,Country A,Country B,6.0
+P009,Monsoon Sweets item 1,sweets,60,20,5.73,Country A,Country B,8.0
+P010,Banyan Sweets item 2,sweets,60,20,1.6,Country A,Country B,8.0
+P011,Sunrise Sweets item 3,sweets,60,20,5.3,Country A,Country B,8.0
+P012,Lotus Sweets item 4,sweets,60,20,2.29,Country A,Country B,8.0
+P013,Peacock Sweets item 5,sweets,60,20,3.66,Country A,Country B,8.0
+P014,Monsoon Sweets item 6,sweets,60,20,5.23,Country A,Country B,8.0
+P015,Banyan Sweets item 7,sweets,60,20,3.68,Country A,Country B,8.0
+P016,Sunrise Sweets item 8,sweets,60,20,2.67,Country A,Country B,8.0
+P017,Lotus Snacks item 1,snacks,120,30,3.15,Country A,Country B,4.0
+P018,Peacock Snacks item 2,snacks,120,30,3.74,Country A,Country B,4.0
+P019,Monsoon Snacks item 3,snacks,120,30,3.51,Country A,Country B,4.0
+P020,Banyan Snacks item 4,snacks,120,30,5.78,Country A,Country B,4.0
+P021,Sunrise Snacks item 5,snacks,120,30,4.01,Country A,Country B,4.0
+P022,Lotus Snacks item 6,snacks,120,30,1.6,Country A,Country B,4.0
+P023,Peacock Snacks item 7,snacks,120,30,3.71,Country A,Country B,4.0
+P024,Monsoon Snacks item 8,snacks,120,30,5.78,Country A,Country B,4.0
+P025,Banyan Snacks item 9,snacks,120,30,5.04,Country A,Country B,4.0
+P026,Sunrise Snacks item 10,snacks,120,30,4.18,Country A,Country B,4.0
+P027,Lotus Garam Masala 100g (unrecorded gap demo),spices,365,60,4.48,Country A,Country B,6.0
+P028,Peacock Spices item 2,spices,365,60,3.71,Country A,Country B,6.0
+P029,Monsoon Spices item 3,spices,365,60,4.98,Country A,Country B,6.0
+P030,Banyan Spices item 4,spices,365,60,4.12,Country A,Country B,6.0
+P031,Sunrise Spices item 5,spices,365,60,4.47,Country A,Country B,6.0
+P032,Lotus Spices item 6,spices,365,60,3.51,Country A,Country B,6.0
+P033,Peacock Spices item 7,spices,365,60,5.51,Country A,Country B,6.0
+P034,Monsoon Spices item 8,spices,365,60,3.94,Country A,Country B,6.0
+P035,Banyan Spices item 9,spices,365,60,4.23,Country A,Country B,6.0
+P036,Sunrise Spices item 10,spices,365,60,4.83,Country A,Country B,6.0
+P037,Lotus Beverages item 1,beverages,180,30,5.86,Country A,Country B,12.0
+P038,Peacock Beverages item 2,beverages,180,30,5.32,Country A,Country B,12.0
+P039,Monsoon Beverages item 3,beverages,180,30,3.5,Country A,Country B,12.0
+P040,Banyan Beverages item 4,beverages,180,30,4.0,Country A,Country B,12.0
+P041,Sunrise Beverages item 5,beverages,180,30,3.09,Country A,Country B,12.0
+P042,Lotus Beverages item 6,beverages,180,30,5.35,Country A,Country B,12.0
+P043,Peacock Beverages item 7,beverages,180,30,5.89,Country A,Country B,12.0
+P044,Monsoon Beverages item 8,beverages,180,30,2.39,Country A,Country B,12.0
+P045,Banyan Frozen item 1,frozen,270,30,2.67,Country A,Country B,9.0
+P046,Sunrise Frozen item 2,frozen,270,30,5.02,Country A,Country B,9.0
+P047,Lotus Frozen item 3,frozen,270,30,2.22,Country A,Country B,9.0
+P048,Peacock Frozen item 4,frozen,270,30,5.54,Country A,Country B,9.0
+P049,Monsoon Frozen item 5,frozen,270,30,3.77,Country A,Country B,9.0
+P050,Banyan Frozen item 6,frozen,270,30,5.63,Country A,Country B,9.0
+P051,Sunrise Rice Flour item 1,rice_flour,365,45,5.37,Country A,Country B,18.0
+P052,Lotus Rice Flour item 2,rice_flour,365,45,5.6,Country A,Country B,18.0
+P053,Peacock Rice Flour item 3,rice_flour,365,45,4.35,Country A,Country B,18.0
+P054,Monsoon Rice Flour item 4,rice_flour,365,45,1.79,Country A,Country B,18.0
+P055,Banyan Rice Flour item 5,rice_flour,365,45,2.06,Country A,Country B,18.0
+P056,Sunrise Rice Flour item 6,rice_flour,365,45,1.95,Country A,Country B,18.0
+P057,Lotus Bulk Catering item 1,bulk_catering,180,30,2.15,Country A,Country B,20.0
+P058,Peacock Bulk Catering item 2,bulk_catering,180,30,3.28,Country A,Country B,20.0
+P059,Monsoon Bulk Catering item 3,bulk_catering,180,30,4.17,Country A,Country B,20.0
+P060,Banyan Bulk Catering item 4,bulk_catering,180,30,2.03,Country A,Country B,20.0
+AD201,Sunrise Toor Dal 4 lb X 10,lentils_beans,365,130,4.19,Country A,Country B,18.144
+AD202,Sunrise Moong Dal 4 lb X 10,lentils_beans,365,130,3.6,Country A,Country B,18.144
+BD301,Chana Dal 55 Lb X,lentils_beans,365,130,3.57,Country A,Country B,24.948
+AD299,Sunrise Panchratna Dal 2 lb X 20,lentils_beans,365,130,4.64,Country A,Country B,18.144
+AN401,Lotus Almond 14 oz X 20,nuts_dry_fruits,365,130,4.85,Country A,Country B,7.938
+AN402,Lotus Cashew Whole 14 oz X 20,nuts_dry_fruits,365,130,5.37,Country A,Country B,7.938
+AN403,Lotus Green Raisin 14 oz X 20,nuts_dry_fruits,365,130,1.56,Country A,Country B,7.938
+AN499,Lotus Alo Bukhara 14 oz X 20,nuts_dry_fruits,365,130,3.03,Country A,Country B,7.938
+AR501,Peacock Basmati Rice 10 lb X 4,rice_flour,365,130,3.78,Country A,Country B,18.144
+AR502,Peacock Idli Rice 20 lb X 2,rice_flour,365,130,1.88,Country A,Country B,18.144

@@ -100,14 +100,26 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
                              status="sellable"))
         stock.append(dict(product_id=pid_, on_hand_units=int(base * hr.uniform(2.0, 5.0)), held_units=0,
                           earliest_expiry=str((months[-1] + pd.DateOffset(months=10)).date())))
+    # Case weights, so containers can be estimated (CBM per case = weight / category density, marked
+    # "estimated from weight" like the real data). Named packs are parsed the engine's way ("4 lb X 10"
+    # = 18.1 kg); the generic demo items get a plausible weight for their category.
+    from . import packs
+    prod = pd.DataFrame(products)
+    parsed = packs.parse_all(prod["name"])
+    named = prod["product_id"].isin({h[0] for h in HARVEST_DEMO})        # real-looking pack names
+    prod["case_weight_kg"] = parsed["case_weight_kg"].where(named).fillna(prod["category"].map(DEMO_CASE_KG)).round(3)
     out = Path(out_dir)
     out.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(out / "sales.csv", index=False)
-    pd.DataFrame(products).to_csv(out / "products.csv", index=False)
+    prod.to_csv(out / "products.csv", index=False)
     if write_stock:
         pd.DataFrame(stock).to_csv(out / "stock.csv", index=False)
     return out
 
+
+# Plausible case weights (kg) for the generic demo items, by category (e.g. noodles: 30 packs of 200 g).
+DEMO_CASE_KG = {"noodles": 6.0, "sweets": 8.0, "snacks": 4.0, "spices": 6.0, "beverages": 12.0, "frozen": 9.0,
+                "rice_flour": 18.0, "bulk_catering": 20.0, "lentils_beans": 18.0, "nuts_dry_fruits": 8.0}
 
 # (product_id, name, category, typical cases a month): real-looking names so config/commodity_map.csv maps them
 HARVEST_DEMO = [
