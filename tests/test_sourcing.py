@@ -204,3 +204,22 @@ def test_demo_story_cashew(demo_run, tmp_path, monkeypatch):
     assert real["leads"] == 0 and real["alerts"] == 0
     assert not real["lines"]["alert"].fillna("").str.contains("DEMO").any()
     assert not real["summary"]["alerts"].fillna("").str.contains("DEMO").any()
+
+
+def test_demo_folder_shows_real_news_for_its_commodities(tmp_path, monkeypatch):
+    real, demo = tmp_path / "real", tmp_path / "demo"
+    real.mkdir(), demo.mkdir()
+    monkeypatch.setattr(S, "REAL_DATA", real)
+    monkeypatch.setattr(S, "DEMO_DATA", demo)
+    pd.DataFrame({"product_id": ["AN402"], "name": ["Lotus Cashew Whole 14 oz X 20"], "category": ["nuts_dry_fruits"]}).to_csv(demo / "products.csv", index=False)
+    S.add_alerts([dict(commodity="cashew", country="India", issue="Unverified news: floods hit cashew orchards",
+                       source_url="https://example.org/real", reported_on="2026-11-05"),
+                  dict(commodity="pistachio", country="Iran", issue="Unverified news: frost", source_url="https://example.org/p",
+                       reported_on="2026-11-05")], real, today=TODAY)
+    S.add_alerts([dict(commodity="cashew", country="Cote d'Ivoire", issue="DEMO: fake", source_url="https://example.org/d",
+                       reported_on="2026-11-05", is_demo="yes")], demo, today=TODAY)
+    d = S.load_alerts(demo, TODAY).set_index("country")
+    assert set(d.index) == {"India", "Cote d'Ivoire"}                            # pistachio: not a demo commodity
+    assert d.at["India", "label"] == "real news" and d.at["Cote d'Ivoire", "label"] == "demo"
+    r = S.load_alerts(real, TODAY)
+    assert set(r["label"]) == {"real news"} and "Cote d'Ivoire" not in set(r["country"])   # demo never in real data

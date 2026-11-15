@@ -104,13 +104,28 @@ def load_leads(data_dir, answers=None):
     return leads.reset_index(drop=True)
 
 
+def _demo_commodities(data_dir):
+    """Commodities the products in a data folder map to (config/commodity_map.csv)."""
+    p = Path(data_dir) / "products.csv"
+    if not p.exists():
+        return set()
+    mapped, _ = H.map_products(pd.read_csv(p, dtype={"product_id": str}), H.load_map())
+    return set(mapped["commodity"]) - {""}
+
+
 def load_alerts(data_dir, today, answers=None):
-    """Active, unexpired alerts, after the owner's alert:ALERT_ID answers (no = dismissed). Demo alerts never count
-    in the real data folder."""
+    """Active, unexpired alerts, after the owner's alert:ALERT_ID answers (no = dismissed), each with a `label`:
+    "demo" (fake, demo folder only) or "real news". Demo alerts never count in the real data folder. In the demo folder,
+    real-news alerts from data/country_alerts.csv are shown too (public information) for the demo's commodities."""
     al = _read(Path(data_dir) / "country_alerts.csv", ALERT_COLUMNS)
     if _is_real(data_dir):
         al = al[~al["is_demo"].map(_yes)]
+    elif _is_demo_dir(data_dir) and (REAL_DATA / "country_alerts.csv").exists():
+        real = _read(REAL_DATA / "country_alerts.csv", ALERT_COLUMNS)
+        real = real[~real["is_demo"].map(_yes) & real["commodity"].isin(_demo_commodities(data_dir) | {"all"})]
+        al = pd.concat([al, real[~real["alert_id"].isin(al["alert_id"])]], ignore_index=True)
     al = al.copy()
+    al["label"] = np.where(al["is_demo"].map(_yes), "demo", "real news")
     if answers is not None:
         from . import answers as A
         al = A.alert_answers(answers, al)
@@ -484,7 +499,7 @@ def run(data_dir, out_dir, today, calendar=None, answers=None):
     L = pd.concat(lines, ignore_index=True) if lines else pd.DataFrame(columns=OPTION_COLUMNS)
     s.to_csv(out_dir / "sourcing_options.csv", index=False)
     L.to_csv(out_dir / "sourcing_option_lines.csv", index=False)
-    alerts[alerts["active"]][ALERT_COLUMNS].to_csv(out_dir / "country_alerts_active.csv", index=False)
+    alerts[alerts["active"]][ALERT_COLUMNS + ["label"]].to_csv(out_dir / "country_alerts_active.csv", index=False)
     leads[LEAD_COLUMNS].to_csv(out_dir / "supplier_leads_used.csv", index=False)       # after guards and owner answers
     return dict(summary=s, lines=L, note=note, leads=len(leads), alerts=int(alerts["active"].sum()))
 

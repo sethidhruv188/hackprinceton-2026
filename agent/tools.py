@@ -339,8 +339,8 @@ def country_alerts() -> str:
     al = al[al["active"]]
     if al.empty:
         return "No active country alerts."
-    return _cap("\n".join(f"- {r.alert_id}: {r.country}, {r.commodity}: {r.issue} (source {r.source_url}; reported {r.reported_on}, "
-                          f"expires {r.expires:%Y-%m-%d})" for r in al.itertuples()))
+    return _cap("\n".join(f"- {r.alert_id} [{r.label}]: {r.country}, {r.commodity}: {r.issue} (source {r.source_url}; "
+                          f"reported {r.reported_on}, expires {r.expires:%Y-%m-%d})" for r in al.itertuples()))
 
 
 # ------------------------------------------------------------------ forecast quality, questions

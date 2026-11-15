@@ -48,7 +48,7 @@ def build_digest(data, out, today):
                     f"{r.commodity} ({r.source_country}) {'order now' if r.status == 'ORDER NOW' else 'window opens ' + r.order_window_start}"
                     f", by {r.order_by}, {T._num(r.quantity_cases)} cases" for r in soon.head(4).itertuples()))
         if len(alerts):
-            lines.append("Alerts: " + "; ".join(f"{r.country} {r.commodity}: {r.issue}" for r in alerts.head(3).itertuples()))
+            lines.append("Alerts: " + "; ".join(f"[{r.label}] {r.country} {r.commodity}: {r.issue}" for r in alerts.head(3).itertuples()))
         if not lines:
             return None
         return f"Daily digest {ctx.today:%b %d}:\n" + "\n".join(lines) + "\nAsk me about any of these."
