@@ -33,3 +33,8 @@ imessage/state/
 
 # Claude Code personal settings (attribution off etc.); never committed
 .claude/settings.local.json
+
+# Agent runtime files in the demo folder (data/ is ignored entirely)
+data_demo/agent_*.csv
+data_demo/agent_memory/
+data_demo/agent_threads.sqlite*
