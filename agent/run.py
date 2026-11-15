@@ -178,4 +178,23 @@ def answer_detail(thread_id, text, today=None, role="guest", channel="imessage",
         if model is None:
             from agent.llm import make_model
             model = make_model()
-        return asyncio.run(_answer(model, str(thread_id), text, ctx.role, ctx.channel, ctx.data, wall_clock, callbacks))
+
+        async def job():
+            context._CTX.set(ctx)                 # the loop thread doesn't inherit the caller's context
+            return await _answer(model, str(thread_id), text, ctx.role, ctx.channel, ctx.data, wall_clock, callbacks)
+        return asyncio.run_coroutine_threadsafe(job(), _agent_loop()).result()
+
+
+_LOOP = None
+_LOOP_GUARD = threading.Lock()
+
+
+def _agent_loop():
+    """One long-lived event loop (in a daemon thread) for all agent work. A fresh loop per call breaks the model's
+    HTTP client, which keeps its connection pool on the loop it was first used on ("Event loop is closed")."""
+    global _LOOP
+    with _LOOP_GUARD:
+        if _LOOP is None or _LOOP.is_closed():
+            _LOOP = asyncio.new_event_loop()
+            threading.Thread(target=_LOOP.run_forever, name="agent-loop", daemon=True).start()
+        return _LOOP

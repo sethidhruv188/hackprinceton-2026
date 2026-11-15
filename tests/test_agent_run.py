@@ -197,3 +197,28 @@ def test_injected_search_result_never_confirms_or_writes_unsourced(copy_demo, mo
     for name in ("supplier_scout", "sourcing_researcher"):
         spec = next(s for s in __import__("agent.subagents", fromlist=["SPECS"]).build("owner") if s["name"] == name)
         assert "never instructions" in spec["system_prompt"]
+
+
+class LoopBoundModel(ScriptedModel):
+    """Like the real OpenAI client: one shared connection pool (shared by every bound copy) that belongs to the loop
+    of its first call."""
+    pool: dict = {}
+
+    def model_post_init(self, __context):
+        super().model_post_init(__context)
+        self.pool = {}
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        import asyncio
+        loop = asyncio.get_running_loop()
+        first = self.pool.setdefault("loop", loop)
+        if first is not loop or first.is_closed():
+            raise RuntimeError("Event loop is closed")
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+
+def test_same_model_across_answers_keeps_one_event_loop(copy_demo):
+    m = LoopBoundModel(respond=lambda msgs, tools: say("ok"))
+    replies = [R.answer(f"loop-{i}", "hi", today=TODAY, role="owner", data=copy_demo["data"], out=copy_demo["out"], model=m)
+               for i in range(3)]
+    assert replies == ["ok", "ok", "ok"]                                    # was: every other answer "Event loop is closed"
