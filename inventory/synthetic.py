@@ -98,7 +98,10 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
             lam = base * (1.25 if m in diwali else 1.0)
             rows.append(dict(product_id=pid_, month=m.strftime("%Y-%m"), units_sold=int(hr.poisson(lam * hr.gamma(8, 1 / 8))),
                              status="sellable"))
-        stock.append(dict(product_id=pid_, on_hand_units=int(base * hr.uniform(2.0, 5.0)), held_units=0,
+        cover = hr.uniform(2.0, 5.0)
+        if pid_ in DEMO_LOW_STOCK:                     # the demo's at-risk product (sourcing demo)
+            cover = DEMO_LOW_STOCK[pid_]
+        stock.append(dict(product_id=pid_, on_hand_units=int(base * cover), held_units=0,
                           earliest_expiry=str((months[-1] + pd.DateOffset(months=10)).date())))
     # Case weights, so containers can be estimated (CBM per case = weight / category density, marked
     # "estimated from weight" like the real data). Named packs are parsed the engine's way ("4 lb X 10"
@@ -141,6 +144,40 @@ DEMO_ANSWERS = [
     ("harvest:toor_india", "yes", "confirmed on the dashboard (demo)"),
     ("harvest:almond_usa", "yes", "confirmed on the dashboard (demo)"),
 ]
+
+
+DEMO_LOW_STOCK = {"AN402": 0.5}         # months of stock on hand: the demo cashew is at risk
+
+# Clearly fake supplier leads and one fake alert for the sourcing demo (is_demo = yes; example.org sources).
+DEMO_LEADS = [
+    dict(company="Demo Exporter A", country="Côte d'Ivoire", commodities="cashew;almond", status="unverified_lead"),
+    dict(company="Demo Exporter B", country="India", commodities="cashew;almond;raisin", status="unverified_lead"),
+    dict(company="Demo Supplier C", country="India", commodities="toor;moong", status="confirmed"),
+    dict(company="Demo Exporter D", country="Vietnam", commodities="cashew", status="rejected"),
+    dict(company="Demo Exporter E", country="USA", commodities="almond;walnut", status="unverified_lead"),
+]
+DEMO_ALERTS = [
+    dict(commodity="cashew", country="Côte d'Ivoire", issue="DEMO: port congestion delaying cashew shipments (fake demo alert)",
+         reported_on="2026-11-01"),
+]
+
+
+def write_demo_sourcing(out_dir, found_on="2026-11-05"):
+    """Write the fake demo leads and alert into a DEMO data folder (never the real one)."""
+    from . import sourcing as S
+    out = Path(out_dir)
+    if out.resolve() == REAL_DATA_DIR:
+        raise ValueError("demo leads and alerts never go into the real data folder")
+    leads = pd.DataFrame([dict(lead_id=S._id("L", d["company"], d["country"]), company=d["company"], country=d["country"],
+                               commodities=d["commodities"], website="", source_url="https://example.org/demo-lead",
+                               found_on=found_on, status=d["status"], owner_note="", is_demo="yes") for d in DEMO_LEADS])
+    leads[S.LEAD_COLUMNS].to_csv(out / "supplier_leads.csv", index=False)
+    (out / "country_alerts.csv").unlink(missing_ok=True)
+    res = S.add_alerts([dict(a, source_url="https://example.org/demo-alert", is_demo="yes") for a in DEMO_ALERTS], out,
+                       today=found_on)
+    if res["rejected"]:
+        raise ValueError(f"demo alert rejected: {res['rejected']}")
+    return out / "supplier_leads.csv", out / "country_alerts.csv"
 
 
 def write_demo_answers(out_dir, timestamp="2026-11-10T09:00:00+00:00"):

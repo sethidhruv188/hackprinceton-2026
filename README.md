@@ -149,7 +149,7 @@ Hand-written override files win over answers (`data/raw/case_cbm.csv`, rules alr
 `config/harvest.csv`); the clash is reported. Each run writes `outputs/answers_applied.csv` with a status
 for every row: `applied`, `confirmed`, `no change`, `needs ingest`, `note not understood`,
 `conflict: override file wins`, `not found`, `superseded`, `unknown question` or `malformed row`. Bad rows
-never stop a run; anything that needs attention is listed in section 9 of `outputs/backtest_report.md`.
+never stop a run; anything that needs attention is listed in section 10 of `outputs/backtest_report.md`.
 `outputs/holds_now.csv` lists the products on hold after the answers; the dashboard reads it.
 6. **How good is the forecast**: the replay result in plain words (it ties averaging at equal stock).
 
@@ -271,6 +271,44 @@ crop, and make it last until the next harvest's stock arrives (`inventory/harves
 - **Demo**: `python run.py --generate --demo-harvest --today 2026-11-14` writes demo stock and sample owner answers
   that confirm two cited calendar rows, so the harvest orders show up in the demo's brand orders
   (`./dashboard.sh demo` or `.\dashboard.ps1 demo`).
+
+### Sourcing intelligence (who else could supply an at-risk product)
+
+`inventory/sourcing.py` answers "this product is at risk: where else does it grow, who might supply it, and what
+else could the same order cover?" It is pure data: it never searches the web and never contacts anyone. The owner
+decides; there are no contact fields anywhere, by design.
+
+- **At-risk products** come from the engine's own flags only: below the 3-month floor now or before a restock
+  (expedite), runs out before its order arrives, a harvest buy that needs a bridge order, or an order already too
+  late for the full lead time. Products on hold are left out. Without stock data it says risk can't be assessed.
+- **Supplier leads** (`data/supplier_leads.csv`, gitignored with the rest of `data/`): lead_id, company, country,
+  commodities, website, source_url, found_on, status (`unverified_lead` / `confirmed` / `rejected`), owner_note,
+  is_demo. The agent's supplier_scout will add leads through `sourcing.add_leads()` (needs a source URL, known
+  commodities, refuses contact details, merges duplicates, always `unverified_lead`). A vendor list, if one ever
+  exists, can be loaded with `sourcing.import_vendor_list()`. Real company names never go into the repo:
+  `data_demo/` holds only clearly fake leads ("Demo Exporter A", example.org sources), and demo rows are ignored in
+  `data/`.
+- **Country alerts** (`data/country_alerts.csv`): alert_id, commodity (or `all`), country, issue, source_url,
+  reported_on, expires_on (default + 60 days), status (`active` / `dismissed`), is_demo; added through
+  `sourcing.add_alerts()` (a source URL is required). Expired or dismissed alerts are ignored; demo alerts never
+  count in `data/`.
+- **Ranking** (labels always shown): confirmed supplier, then unverified lead, then a producing country with no
+  lead yet; rejected leads are listed but never ranked. Within a tier: a country with an active alert ranks below
+  the others; then arrival in time (105-130 days vs the run-out date: the same for every source until suppliers'
+  own lead times are known), harvest timing from `config/harvest_calendar.csv` (in harvest, just after, sooner
+  first, unknown last), consolidation value and owner notes.
+- **Consolidation**: other commodities the lead lists that we need: brand-order lines due within 60 days and
+  confirmed harvest buys within a year, each with its date, so one order or container can cover several needs.
+- **Outputs**: `outputs/sourcing_options.csv` (one row per at-risk product: risk, run-out date, arrival if ordered
+  today, alternative countries with harvest timing, labeled leads, consolidation, alerts, and what is unknown) and
+  `outputs/sourcing_option_lines.csv` (every ranked source). Section 9 of the run report summarizes it.
+- **Demo**: `--demo-harvest` also writes the fake leads and one alert issue starting "DEMO:" on Côte d'Ivoire cashew:
+  the demo cashew is at risk, the alert drops that country's lead, the India lead ranks first, and it lists raisins
+  (needed now) and almonds (a planned harvest buy).
+- **Credit**: the lead-research design (search per commodity and producing country, record the source of every
+  company, dedupe, label how reliable each lead is) is inspired by the open-source
+  [harvey](https://github.com/ethanplusai/harvey) outreach agent by ethanplusai. Harvey is AGPL-3.0; no code is
+  taken from it, and unlike harvey nothing here sends email or contacts anyone.
 
 ## Real data (NetSuite exports)
 

@@ -1,0 +1,2 @@
+alert_id,commodity,country,issue,source_url,reported_on,expires_on,status,is_demo
+Affbd935e,cashew,Côte d'Ivoire,DEMO: port congestion delaying cashew shipments (fake demo alert),https://example.org/demo-alert,2026-11-01,2026-12-31,active,yes

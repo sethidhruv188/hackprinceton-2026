@@ -21,7 +21,7 @@ import pandas as pd
 import json
 
 from inventory import schema, synthetic, ingest, gaps, forecast, backtest, plan, checks, spikes, policy, simulate, brand_orders
-from inventory import tournament, large_orders, answers
+from inventory import tournament, large_orders, answers, sourcing
 
 ROOT = Path(__file__).resolve().parent
 REAL_DIRS = {"data": "data", "out": "outputs", "models": "models"}            # the real business folders
@@ -32,8 +32,8 @@ ap.add_argument("--source", choices=["real", "synthetic"], default="real")
 ap.add_argument("--generate", action="store_true",
                 help="write synthetic data first (implies --source synthetic); default folders data_demo/, outputs_demo/, models_demo/")
 ap.add_argument("--demo-harvest", action="store_true",
-                help="with --generate: also write demo stock and sample owner answers that confirm harvest calendar rows, "
-                     "so the demo shows harvest orders in the brand orders")
+                help="with --generate: also write demo stock, sample owner answers that confirm harvest calendar rows, and fake "
+                     "supplier leads plus one fake country alert, so the demo shows harvest orders and sourcing options")
 ap.add_argument("--allow-overwrite-real-data", action="store_true",
                 help="let a synthetic run write into the real data/, outputs/ or models/ folders (refused otherwise)")
 ap.add_argument("--ingest", action="store_true", help="rebuild data/ from the .xlsx exports in --raw first")
@@ -110,6 +110,7 @@ if a.generate:
     print("synthetic data ->", synthetic.generate(a.data, allow_real=a.allow_overwrite_real_data, write_stock=a.demo_harvest))
     if a.demo_harvest:
         print("demo owner answers ->", synthetic.write_demo_answers(a.data))
+        print("demo supplier leads and alert ->", *synthetic.write_demo_sourcing(a.data))
 ans = answers.load(a.data)           # the owner's answers (data/owner_answers.csv), applied in memory below
 if a.ingest and not a.generate:
     print("== Ingest ==")
@@ -312,9 +313,12 @@ bo, bl = brand_orders.run(a.data, OUT, today, int(a.cover_months), use_stock, an
 say("8. Brand orders", f"{len(bo)} brand orders ({bo['brand'].nunique()} brands), {len(bl)} lines -> "
     f"{OUT}/brand_orders.csv, brand_order_lines.csv, brands.csv; statuses: "
     + ", ".join(f"{k} {v}" for k, v in bo["status"].value_counts().items()))
+src = sourcing.run(a.data, OUT, today)
+say("9. Sourcing", f"{len(src['summary'])} products at risk, {src['leads']} supplier leads, {src['alerts']} active country alerts "
+    f"-> outputs/sourcing_options.csv, sourcing_option_lines.csv" + (f" ({src['note']})" if src["note"] else ""))
 answer_report = ans.report()
 answer_report.to_csv(OUT / "answers_applied.csv", index=False)
-say("9. Owner answers", answers.summary(answer_report))
+say("10. Owner answers", answers.summary(answer_report))
 attention = answer_report[~answer_report["status"].isin([answers.APPLIED, answers.CONFIRMED, answers.NO_CHANGE, answers.SUPERSEDED])]
 if len(attention):
     say("", attention[["question_id", "answer", "status", "action"]])

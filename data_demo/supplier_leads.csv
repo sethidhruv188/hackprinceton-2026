@@ -1,0 +1,6 @@
+lead_id,company,country,commodities,website,source_url,found_on,status,owner_note,is_demo
+L0f44b75a,Demo Exporter A,Côte d'Ivoire,cashew;almond,,https://example.org/demo-lead,2026-11-05,unverified_lead,,yes
+L1482bbb3,Demo Exporter B,India,cashew;almond;raisin,,https://example.org/demo-lead,2026-11-05,unverified_lead,,yes
+Lf442b474,Demo Supplier C,India,toor;moong,,https://example.org/demo-lead,2026-11-05,confirmed,,yes
+L13d99438,Demo Exporter D,Vietnam,cashew,,https://example.org/demo-lead,2026-11-05,rejected,,yes
+L941ab24c,Demo Exporter E,USA,almond;walnut,,https://example.org/demo-lead,2026-11-05,unverified_lead,,yes

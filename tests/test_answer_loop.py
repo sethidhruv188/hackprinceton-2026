@@ -60,4 +60,4 @@ def test_released_hold_is_no_longer_a_hold(demo_run, tmp_path, monkeypatch):
     assert rep.at[f"hold:{held}", "status"] == "applied"
     assert rep.at["not-a-question:X", "status"] == "unknown question"
     assert rep.at["hold:P002", "status"] == "malformed row"
-    assert "9. Owner answers" in (out / "backtest_report.md").read_text()
+    assert "10. Owner answers" in (out / "backtest_report.md").read_text()
