@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { getJSON, postJSON } from "./api.js";
 
-// Demo / real mode and "plan as of" date, held by the local API server; `rev` changes after every update so pages
+// Data mode (always real on the dashboard) and "plan as of" date, held by the local API server; `rev` changes after every update so pages
 // refetch their data.
 const Ctx = createContext({ settings: null, rev: 0, update: async () => {}, error: null });
 

@@ -1,69 +1,142 @@
 import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, LayoutGrid, Rows3, Search, Tags } from "lucide-react";
 import { useData } from "../useData.js";
-import { cases, niceDate } from "../format.js";
-import { ErrorBox, Loading, Panel, StatusText, Table, Toolbar } from "../components.jsx";
+import { cases } from "../format.js";
+import { ErrorBox } from "../components.jsx";
+import { BrandName, EmptyState, RiskBar, RunwayBar, StatusPill, Term, Tip, fmt0, relDays, shortDate } from "../ui.jsx";
 
-const SORTS = {
-  date: ["Next order date", (a, b) => (a.next_order?.order_by_safe || "9999").localeCompare(b.next_order?.order_by_safe || "9999")],
-  name: ["Name", (a, b) => a.brand.localeCompare(b.brand)],
-  volume: ["Monthly sales", (a, b) => (b.monthly_cases || 0) - (a.monthly_cases || 0)],
-  cover: ["Months of stock (lowest first)", (a, b) => (a.months_of_cover ?? 999) - (b.months_of_cover ?? 999)],
+// Sort keys: [label, value getter, default direction]. Missing values always sort last.
+const COLS = {
+  brand: ["Brand", (b) => b.brand.toLowerCase(), "asc"],
+  products: ["Products", (b) => b.active_products ?? b.products, "desc"],
+  monthly: ["Sold per month", (b) => b.monthly_cases, "desc"],
+  onhand: ["On hand", (b) => b.on_hand_cases, "desc"],
+  cover: ["Months of stock", (b) => b.months_of_cover, "asc"],
+  risk: ["SKUs below floor", (b) => (b.below_floor_now || 0) * 1000 + (b.below_floor_soon || 0), "desc"],
+  next: ["Next order", (b) => b.next_order?.order_by_safe, "asc"],
+  cases: ["Cases", (b) => b.next_order?.cases, "desc"],
 };
+
+function sortRows(rows, key, dir) {
+  const get = COLS[key][1];
+  return [...rows].sort((a, b) => {
+    const x = get(a), y = get(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    const c = x < y ? -1 : x > y ? 1 : 0;
+    return dir === "asc" ? c : -c;
+  });
+}
+
+function Th({ k, sort, setSort, className = "", children }) {
+  const active = sort[0] === k;
+  const Icon = !active ? ArrowUpDown : sort[1] === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th scope="col" className={`sortable ${className}`} aria-sort={active ? (sort[1] === "asc" ? "ascending" : "descending") : "none"}
+        onClick={() => setSort(active ? [k, sort[1] === "asc" ? "desc" : "asc"] : [k, COLS[k][2]])}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} tabIndex={0}>
+      {children || COLS[k][0]}<span className="sort"><Icon className="ico-sm" aria-hidden="true" /></span>
+    </th>
+  );
+}
 
 export default function Brands() {
   const { data, error } = useData("/brands");
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState("date");
+  const [sort, setSort] = useState(["next", "asc"]);
+  const [view, setView] = useState(() => { try { return localStorage.getItem("brands-view") || "table"; } catch { return "table"; } });
+  const setV = (v) => { setView(v); try { localStorage.setItem("brands-view", v); } catch { /* blocked */ } };
+
   const rows = useMemo(() => {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
-    return data.brands.filter((b) => !needle || b.brand.toLowerCase().includes(needle)).sort(SORTS[sort][1]);
+    return sortRows(data.brands.filter((b) => !needle || b.brand.toLowerCase().includes(needle)), sort[0], sort[1]);
   }, [data, q, sort]);
+
   if (error) return <ErrorBox error={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <div className="skeleton"><span /><span /><span /></div>;
   const today = data.today;
   const stock = data.stock_used;
+  const go = (b) => { window.location.hash = `/brand/${encodeURIComponent(b)}`; };
+
   return (
     <div data-ready="brands">
-      <Panel id="brands-h" title={`${data.brands.length} brands`} sub={stock ? "Stock on hand included" : "Gross need: stock on hand not included"}>
-        <Toolbar>
-          <label>Brand
-            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by name" />
-          </label>
-          <label>Sort by
-            <select value={sort} onChange={(e) => setSort(e.target.value)}>
-              {Object.entries(SORTS).map(([k, [label]]) => <option key={k} value={k}>{label}</option>)}
-            </select>
-          </label>
-          <span className="count" role="status">{rows.length} shown</span>
-        </Toolbar>
-        <Table id="brands" caption="Every brand with its sales pace, stock and next order">
-          <thead>
-            <tr>
-              <th scope="col">Brand</th><th scope="col" className="num">Products</th><th scope="col" className="num">Sold per month</th>
-              {stock && <th scope="col" className="num">On hand</th>}
-              {stock && <th scope="col" className="num">Months of stock</th>}
-              <th scope="col">Next order</th><th scope="col" className="num">Cases</th><th scope="col">Below 3-month floor</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="page-head">
+        <div>
+          <h2>Brands</h2>
+          <p>{data.brands.length} brands. {stock ? "Months of stock and the SKU split use stock on hand." : "Gross need: stock on hand not included."}{" "}
+            A brand can have plenty of stock overall and still have many products below the <Term k="floor">3-month floor</Term>: the split bar shows it.</p>
+        </div>
+        <div className="panel-side">
+          <label className="search"><Search className="ico" aria-hidden="true" />
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter brands" aria-label="Filter brands" /></label>
+          <div className="seg" role="group" aria-label="View">
+            <button type="button" aria-pressed={view === "table"} onClick={() => setV("table")}><Rows3 className="ico-sm" />Table</button>
+            <button type="button" aria-pressed={view === "grid"} onClick={() => setV("grid")}><LayoutGrid className="ico-sm" />Cards</button>
+          </div>
+          <span className="small muted" role="status">{rows.length} shown</span>
+        </div>
+      </div>
+
+      {rows.length === 0 ? <div className="panel"><EmptyState icon={Tags} title="No brand matches">Try part of the name.</EmptyState></div>
+        : view === "grid" ? (
+          <div className="brand-grid stagger">
             {rows.map((b) => (
-              <tr key={b.brand}>
-                <th scope="row"><a href={`#/brand/${encodeURIComponent(b.brand)}`}>{b.brand}</a></th>
-                <td className="num" data-label="Products">{b.active_products ?? b.products ?? "-"}</td>
-                <td className="num" data-label="Sold per month">{b.monthly_cases != null ? cases(b.monthly_cases) : "-"}</td>
-                {stock && <td className="num" data-label="On hand">{b.on_hand_cases != null ? cases(b.on_hand_cases) : "-"}</td>}
-                {stock && <td className="num" data-label="Months of stock">{b.months_of_cover != null ? b.months_of_cover.toFixed(1) : "-"}</td>}
-                <td data-label="Next order">{b.next_order ? <><StatusText status={b.next_order.status} />
-                  <div className="small">{niceDate(b.next_order.order_by_safe, today)}</div></> : <span className="muted">none planned</span>}</td>
-                <td className="num" data-label="Cases">{b.next_order ? cases(b.next_order.cases, false) : "-"}</td>
-                <td data-label="Below 3-month floor">{b.below_floor_now > 0 ? <span className="st-red">{b.below_floor_now} now</span>
-                  : b.below_floor_soon > 0 ? <span className="st-amber">{b.below_floor_soon} soon</span> : <span className="muted">none</span>}</td>
-              </tr>
+              <button type="button" key={b.brand} className="card brand-card" onClick={() => go(b.brand)}>
+                <div className="row">
+                  <BrandName name={b.brand} sub={`${fmt0(b.active_products ?? b.products)} products · ${cases(b.monthly_cases)}/mo`} />
+                  {b.next_order ? <StatusPill status={b.next_order.status} /> : <span className="pill neutral">No order</span>}
+                </div>
+                {stock && <RunwayBar months={b.months_of_cover} />}
+                <div>
+                  <div className="small muted" style={{ marginBottom: 4 }}>SKUs below the 3-month floor</div>
+                  <RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} />
+                </div>
+                <div className="row small">
+                  <span className="muted">{b.next_order ? `Order by ${shortDate(b.next_order.order_by_safe, true)}` : "Nothing planned"}</span>
+                  <b>{b.next_order ? cases(b.next_order.cases) : ""}</b>
+                </div>
+              </button>
             ))}
-          </tbody>
-        </Table>
-      </Panel>
+          </div>
+        ) : (
+          <div className="tbl-wrap tall">
+            <table className="tbl">
+              <caption className="sr-only">Every brand with its sales pace, stock, SKU risk and next order. Click a column to sort.</caption>
+              <thead>
+                <tr>
+                  <Th k="brand" sort={sort} setSort={setSort} />
+                  <Th k="products" sort={sort} setSort={setSort} className="num" />
+                  <Th k="monthly" sort={sort} setSort={setSort} className="num" />
+                  {stock && <Th k="onhand" sort={sort} setSort={setSort} className="num" />}
+                  {stock && <Th k="cover" sort={sort} setSort={setSort}>Stock runway <Tip text="Months of stock on hand at the last 6 months' pace. The black tick is the 3-month floor." /></Th>}
+                  <Th k="risk" sort={sort} setSort={setSort}>SKU split <Tip text="Products below the 3-month floor now (red), soon (amber) and healthy (green)." /></Th>
+                  <Th k="next" sort={sort} setSort={setSort} />
+                  <Th k="cases" sort={sort} setSort={setSort} className="num" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((b) => (
+                  <tr key={b.brand} className="clickable" onClick={() => go(b.brand)}>
+                    <th scope="row"><BrandName name={b.brand} href={`#/brand/${encodeURIComponent(b.brand)}`} /></th>
+                    <td className="num">{fmt0(b.active_products ?? b.products)}</td>
+                    <td className="num">{b.monthly_cases != null ? fmt0(b.monthly_cases) : "-"}</td>
+                    {stock && <td className="num">{b.on_hand_cases != null ? fmt0(b.on_hand_cases) : "-"}</td>}
+                    {stock && <td style={{ minWidth: 150 }}><RunwayBar months={b.months_of_cover} /></td>}
+                    <td style={{ minWidth: 150 }}><RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} /></td>
+                    <td>{b.next_order ? (
+                      <div style={{ display: "grid", gap: 4, justifyItems: "start" }}>
+                        <StatusPill status={b.next_order.status} />
+                        <span className="small muted">{shortDate(b.next_order.order_by_safe, true)} · {relDays(b.next_order.order_by_safe, today)}</span>
+                      </div>) : <span className="muted small">none planned</span>}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{b.next_order ? fmt0(b.next_order.cases) : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
     </div>
   );
 }

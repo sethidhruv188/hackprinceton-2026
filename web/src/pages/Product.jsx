@@ -4,7 +4,7 @@ import { useSettings } from "../settings.jsx";
 import { cases, monthLabel, niceDate, shortMonth, weight } from "../format.js";
 import { Banner, ErrorBox, Figure, GrossBanner, Loading, Panel, Table, Tag } from "../components.jsx";
 
-const INK = "#1d1d1f", MUTED = "#5d6066", LINE = "#dcdde1", BAND = "#e4e5e8", HOLD = "#f1f1f3", RED = "#a0251f", AMBER = "#855400";
+const INK = "var(--chart-1)", MUTED = "var(--muted)", LINE = "var(--line-strong)", BAND = "var(--chart-band)", HOLD = "var(--surface-3)", RED = "var(--crit-fill)", AMBER = "var(--warn-fill)";
 const CAUSE = {
   post_gap_rebound: "bounce-back after it couldn't be sold", code_switch: "item code change",
   diwali: "before Diwali", other_festival: "near another festival (possible link)",
@@ -94,7 +94,7 @@ export default function Product({ id }) {
               <Line dataKey="sold" stroke={INK} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
               <Line dataKey="likely" stroke={INK} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
               <Line dataKey="spikeDot" stroke="none" isAnimationActive={false} legendType="none"
-                dot={{ r: 4, fill: "#fff", stroke: RED, strokeWidth: 2 }} activeDot={false} />
+                dot={{ r: 4, fill: "var(--surface)", stroke: RED, strokeWidth: 2 }} activeDot={false} />
               {data.diwali_dates.map((d) => (
                 <ReferenceLine key={d} x={d.slice(0, 7)} stroke={MUTED} strokeDasharray="2 3" label={{ value: "Diwali", position: "top", fill: MUTED, fontSize: 11 }} />
               ))}
@@ -106,7 +106,7 @@ export default function Product({ id }) {
             <span className="key"><span className="sw dash" />Likely (forecast)</span>
             <span className="key"><span className="sw box" style={{ background: BAND }} />Up to the high estimate</span>
             {data.hold_months.length > 0 && <span className="key"><span className="sw box" style={{ background: HOLD, outline: `1px solid ${LINE}` }} />On hold</span>}
-            {data.spikes.length > 0 && <span className="key"><span className="sw box" style={{ width: 8, height: 8, border: `2px solid ${RED}`, background: "#fff" }} />Spike</span>}
+            {data.spikes.length > 0 && <span className="key"><span className="sw box" style={{ width: 8, height: 8, border: `2px solid ${RED}`, background: "var(--surface)" }} />Spike</span>}
             <span className="key"><span className="sw dot" style={{ borderColor: MUTED }} />Diwali</span>
           </div>
         </div>

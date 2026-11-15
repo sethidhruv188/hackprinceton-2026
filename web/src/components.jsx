@@ -1,9 +1,10 @@
-import { STATUS, host } from "./format.js";
+import { AlertTriangle, Info } from "lucide-react";
+import { host } from "./format.js";
+import { StatusPill } from "./ui.jsx";
 
-// Status as text with a restrained color; the words always carry the meaning.
-export function StatusText({ status, className = "" }) {
-  const s = STATUS[status] || { cls: "st-grey", short: status };
-  return <span className={`status-text ${s.cls} ${className}`}>{s.short}</span>;
+// Status as a pill: icon + words, so meaning never depends on color alone.
+export function StatusText({ status }) {
+  return <StatusPill status={status} />;
 }
 
 // Quiet loading placeholder: grey bars, no spinner.
@@ -23,9 +24,10 @@ export function ErrorBox({ error }) {
   );
 }
 
-// A one-line note under a 3px rule on the left; tone: "" | "warn".
+// A callout; tone "warn" for things the buyer must not miss.
 export function Banner({ children, tone = "" }) {
-  return <p className={`banner ${tone}`} role="note">{children}</p>;
+  const Icon = tone === "warn" ? AlertTriangle : Info;
+  return <div className={`callout ${tone || "info"}`} role="note"><Icon className="ico" aria-hidden="true" /><div>{children}</div></div>;
 }
 
 export function GrossBanner({ text }) {

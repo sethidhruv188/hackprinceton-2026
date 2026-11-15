@@ -3,12 +3,12 @@ import { getJSON } from "../api.js";
 import { useData } from "../useData.js";
 import { useSettings } from "../settings.jsx";
 import { ErrorBox, Loading, Source, Tag } from "../components.jsx";
+import { brandParts } from "../ui.jsx";
 
-const SUGGESTIONS = [
+const BASE_SUGGESTIONS = [
+  "Which brands will stock out before Diwali?",
   "What do I need to order this week?",
-  "Which brands are below three months of stock?",
   "Expect 30% more moong in December, we're running a promo",
-  "Which harvest buys are coming up?",
 ];
 const CHANNEL = { imessage: "iMessage", dashboard: "Dashboard" };
 const REFRESH_MS = 15000;          // picks up messages sent from iMessage while this page is open
@@ -24,7 +24,72 @@ async function ask(text) {
   return body;
 }
 
-function Message({ m }) {
+// Markdown-lite for agent replies: paragraphs, "- " lists, | tables |, **bold**, links; brand names become links.
+function inline(text, brands) {
+  const parts = [];
+  const re = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s)]+)/g;
+  let last = 0, m;
+  const pushText = (t) => {
+    if (!brands.length) { parts.push(t); return; }
+    const bre = new RegExp(`\\b(${brands.map((b) => b.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "g");
+    let i = 0, x;
+    while ((x = bre.exec(t))) {
+      if (x.index > i) parts.push(t.slice(i, x.index));
+      const b = brands.find((y) => y.label === x[1]);
+      parts.push(<a key={`b${parts.length}`} href={`#/brand/${encodeURIComponent(b.name)}`}>{x[1]}</a>);
+      i = x.index + x[1].length;
+    }
+    if (i < t.length) parts.push(t.slice(i));
+  };
+  while ((m = re.exec(text))) {
+    if (m.index > last) pushText(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("**")) parts.push(<b key={`s${parts.length}`}>{tok.slice(2, -2)}</b>);
+    else if (tok.startsWith("[")) { const [, l, u] = tok.match(/\[([^\]]+)\]\(([^)]+)\)/); parts.push(<a key={`l${parts.length}`} href={u} target="_blank" rel="noreferrer noopener">{l}</a>); }
+    else parts.push(<a key={`u${parts.length}`} href={tok} target="_blank" rel="noreferrer noopener">{tok.replace(/^https?:\/\/(www\.)?/, "").slice(0, 40)}</a>);
+    last = m.index + tok.length;
+  }
+  if (last < text.length) pushText(text.slice(last));
+  return parts;
+}
+
+function Rich({ text, brands }) {
+  const blocks = [];
+  const lines = String(text).split("\n");
+  for (let i = 0; i < lines.length;) {
+    const l = lines[i];
+    if (/^\s*\|.*\|\s*$/.test(l)) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i += 1; }
+      const cells = rows.filter((r) => !/^\s*\|?\s*:?-{3,}/.test(r)).map((r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+      blocks.push(<table key={blocks.length}><thead><tr>{cells[0].map((c, j) => <th key={j}>{inline(c, brands)}</th>)}</tr></thead>
+        <tbody>{cells.slice(1).map((r, k) => <tr key={k}>{r.map((c, j) => <td key={j}>{inline(c, brands)}</td>)}</tr>)}</tbody></table>);
+    } else if (/^\s*[-*•]\s+/.test(l)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*•]\s+/, "")); i += 1; }
+      blocks.push(<ul key={blocks.length}>{items.map((x, k) => <li key={k}>{inline(x, brands)}</li>)}</ul>);
+    } else if (l.trim()) {
+      const para = [];
+      while (i < lines.length && lines[i].trim() && !/^\s*[-*•|]/.test(lines[i])) { para.push(lines[i].replace(/^#+\s*/, "")); i += 1; }
+      blocks.push(<p key={blocks.length}>{inline(para.join(" "), brands)}</p>);
+    } else i += 1;
+  }
+  return <>{blocks}</>;
+}
+
+// Reveals a reply that just arrived progressively (the API returns the whole answer at once).
+function Reveal({ text, brands, onDone }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setN(text.length); onDone?.(); return undefined; }
+    const step = Math.max(3, Math.ceil(text.length / 60));
+    const t = setInterval(() => setN((x) => { const y = Math.min(text.length, x + step); if (y >= text.length) { clearInterval(t); onDone?.(); } return y; }), 16);
+    return () => clearInterval(t);
+  }, [text]);
+  return <Rich text={text.slice(0, n)} brands={brands} />;
+}
+
+function Message({ m, brands = [], reveal, onRevealed }) {
   const who = m.who === "owner" ? "You" : m.who === "agent" ? "Agent" : "Problem";
   return (
     <div className={`msg ${m.who === "owner" ? "you" : m.who}`}>
@@ -33,7 +98,9 @@ function Message({ m }) {
         {m.channel && <>{" "}<Tag>{CHANNEL[m.channel] || m.channel}</Tag></>}
         {m.at && <span className="muted" style={{ marginLeft: 8, textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>{when(m.at)}</span>}
       </div>
-      <div className="body">{m.text}</div>
+      <div className="body">{m.who === "agent"
+        ? (reveal ? <Reveal text={m.text} brands={brands} onDone={onRevealed} /> : <Rich text={m.text} brands={brands} />)
+        : m.text}</div>
       {(m.tools?.length > 0 || m.sources?.length > 0) && (
         <details>
           <summary>How this was worked out</summary>
@@ -53,8 +120,20 @@ export default function Ask() {
   const [details, setDetails] = useState({});       // reply text -> {tools, sources}, for replies given on this page
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [revealText, setRevealText] = useState(null);   // the reply to animate (only replies given on this page)
   const end = useRef(null);
   const box = useRef(null);
+  const { data: br } = useData("/brands");
+  const brands = (br?.brands || []).map((b) => ({ name: b.brand, label: brandParts(b.brand).label })).filter((b) => b.label.length > 2);
+  const urgent = br?.brands?.find((b) => b.next_order?.status === "Order now")?.brand;
+  const SUGGESTIONS = urgent ? [BASE_SUGGESTIONS[0], `Why does ${brandParts(urgent).label} need an order?`, ...BASE_SUGGESTIONS.slice(1)] : BASE_SUGGESTIONS;
+
+  useEffect(() => {                                    // "Adjust" in the order drawer opens this page with a draft
+    try {
+      const pre = sessionStorage.getItem("ask-prefill");
+      if (pre) { setText(pre); sessionStorage.removeItem("ask-prefill"); setTimeout(() => box.current?.focus(), 50); }
+    } catch { /* storage blocked */ }
+  }, []);
 
   const load = useCallback(() => getJSON("/ask/history?limit=60").then((h) => setHistory(h.messages)).catch(() => setHistory((x) => x || [])), []);
   useEffect(() => { load(); }, [load, rev]);
@@ -77,7 +156,7 @@ export default function Ask() {
     try {
       const r = await ask(t);
       if (r.error) setPending((p) => [...p, { who: "error", text: r.error }]);
-      else { setDetails((d) => ({ ...d, [r.reply]: { tools: r.tools, sources: r.sources } })); setPending([]); }
+      else { setDetails((d) => ({ ...d, [r.reply]: { tools: r.tools, sources: r.sources } })); setRevealText(r.reply); setPending([]); }
       await load();
     } catch (e) {
       setPending((p) => [...p, { who: "error", text: String(e.message || e) }]);
@@ -97,7 +176,7 @@ export default function Ask() {
           <p className="sub muted small" style={{ margin: 0 }}>
             {status.available ? <>Model {status.model}. Web search {status.research?.web_search ? "on" : "off"}.</> : status.reason}
             {" "}One conversation with iMessage: texts you send the agent appear here too.
-            {settings && <> Answers use the {settings.mode === "demo" ? "demo" : "real"} data as of the plan date.</>}
+            {settings && <> Answers use the plan as of the date above.</>}
           </p>
         </div>
       </header>
@@ -119,8 +198,10 @@ export default function Ask() {
             )}
           </div>
         )}
-        {messages.map((m, i) => <Message key={`${m.at}-${i}`} m={m} />)}
-        {busy && <div className="thinking" role="status">Working on it</div>}
+        {messages.map((m, i) => <Message key={`${m.at}-${i}`} m={m} brands={brands}
+                                         reveal={m.who === "agent" && m.text === revealText && i === messages.length - 1}
+                                         onRevealed={() => setRevealText(null)} />)}
+        {busy && <div className="thinking" role="status"><span className="typing" aria-hidden="true"><i /><i /><i /></span>Working on it</div>}
         <div ref={end} />
       </div>
 

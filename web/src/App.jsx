@@ -12,7 +12,9 @@ import Harvest from "./pages/Harvest.jsx";
 import Sourcing from "./pages/Sourcing.jsx";
 import Ask from "./pages/Ask.jsx";
 import Activity from "./pages/Activity.jsx";
-import { NAV, Sidebar, TopBar, useLayout } from "./Shell.jsx";
+import { NAV, ShellFrame } from "./Shell.jsx";
+import Palette, { usePaletteHotkeys } from "./Palette.jsx";
+import { ToastProvider, brandParts } from "./ui.jsx";
 
 // Tiny hash router: #/, #/orders, #/brand/<name>, #/product/<id>, #/diwali, #/questions, #/quality, ...
 function useRoute() {
@@ -29,10 +31,11 @@ const TITLES = Object.fromEntries(NAV.flatMap((g) => g.items.map(([href, label])
 
 export default function App() {
   const [page, arg] = useRoute();
-  const wide = useLayout();
-  let body, active = page || "", title;
-  if (page === "brand") { body = <Brand name={arg} />; active = "brands"; title = arg; }
-  else if (page === "product") { body = <Product id={arg} />; active = "products"; title = "Product"; }
+  const [palette, setPalette] = useState(false);
+  usePaletteHotkeys(setPalette);
+  let body, active = page || "", title, crumb = null;
+  if (page === "brand") { body = <Brand name={arg} />; active = "brands"; title = brandParts(arg).label; crumb = ["#/brands", "Brands"]; }
+  else if (page === "product") { body = <Product id={arg} />; active = "products"; title = arg; crumb = ["#/products", "Products"]; }
   else if (page === "orders") body = <Home />;
   else if (page === "diwali") body = <Diwali />;
   else if (page === "questions") body = <Questions />;
@@ -46,15 +49,14 @@ export default function App() {
   else { body = <Overview />; active = ""; }
   title = title || TITLES[active] || "Overview";
 
-  useEffect(() => { document.title = `${title} · Shakti Group USA`; }, [title]);
+  useEffect(() => { document.title = `${title} · Shakti Group Ordering`; }, [title]);
 
   return (
-    <div className="shell">
-      <Sidebar active={active} wide={wide} id="sidebar" />
-      <div className="main">
-        <TopBar title={title} menuId="sidebar" wide={wide} />
-        <main className="content">{body}</main>
-      </div>
-    </div>
+    <ToastProvider>
+      <ShellFrame active={active} title={title} crumb={crumb} onSearch={() => setPalette(true)}>
+        <div className="page-enter" key={`${page}/${arg || ""}`}>{body}</div>
+      </ShellFrame>
+      <Palette open={palette} onClose={() => setPalette(false)} />
+    </ToastProvider>
   );
 }

@@ -199,7 +199,7 @@ def products(q: str = "", show: str = "all", limit: int = 200):
             flag = flag | (pd.to_numeric(t["order_now_cases"], errors="coerce").fillna(0) > 0)
         t = t[flag]
     t = t.sort_values(["brand", "name"], na_position="last")
-    return M.clean(dict(total=total, matched=int(len(t)), products=M.records(t.head(max(1, min(limit, 1000)))),
+    return M.clean(dict(total=total, matched=int(len(t)), products=M.records(t.head(max(1, min(limit, 5000)))),
                         stock_used="status" in t))
 
 
@@ -356,6 +356,26 @@ def activity(limit: int = 200):
                    for r in adj.to_dict("records")][::-1]
     return M.clean(dict(events=[e for _, e in timed[:max(1, min(limit, 1000))]], total=len(timed), counts=counts,
                         adjustments=adjustments))
+
+
+# ---------------------------------------------------------------- stock projection totals (read-only view)
+@router.get("/api/projection")
+def projection(brand: str = "", months: int = 6):
+    """Monthly totals of outputs/stock_projection.csv (written by the engine when ordering against stock): projected
+    stock with no new orders, with the suggested orders, and the 3-month floor, for all products or one brand. A sum of
+    existing outputs only; nothing is recalculated. available=False without stock data."""
+    M = _M()
+    pr = M.csv_out("stock_projection.csv", required=False)
+    if not len(pr):
+        return dict(available=False, brand=brand or None, months=[])
+    if brand:
+        bm = M.csv_out("product_brands.csv", required=False)
+        ids = set(bm.loc[bm["brand"] == brand, "product_id"]) if len(bm) else set()
+        pr = pr[pr["product_id"].isin(ids)]
+    cols = [c for c in ("projected_stock", "projected_with_suggested_order", "floor_3_months", "reorder_point") if c in pr]
+    g = pr.groupby("month")[cols].sum().reset_index().sort_values("month").head(max(1, min(months, 12)))
+    return M.clean(dict(available=bool(len(g)), brand=brand or None, products=int(pr["product_id"].nunique()),
+                        months=M.records(g.round(1))))
 
 
 # ---------------------------------------------------------------- ask the agent

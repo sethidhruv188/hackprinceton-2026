@@ -1,120 +1,378 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertOctagon, AlertTriangle, CheckCircle2, Download, PackageCheck, PauseCircle, Search, Ship, ShoppingCart, SlidersHorizontal } from "lucide-react";
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useData } from "../useData.js";
-import { cases, niceDate, weight, monthLabel, STATUS } from "../format.js";
-import { Banner, ContainerLine, downloadCSV, ErrorBox, Figure, GrossBanner, Loading, Panel, StatusText, Table, Toolbar } from "../components.jsx";
+import { getJSON } from "../api.js";
+import { cases, monthLabel, shortMonth, weight } from "../format.js";
+import { downloadCSV, ErrorBox } from "../components.jsx";
+import {
+  BrandName, ContainerFill, Drawer, EmptyState, KPI, Pill, RiskBar, RunwayBar, SkeletonCards, StatusPill, Term, Tip,
+  fmt0, fmt1, relDays, shortDate, useToast,
+} from "../ui.jsx";
 
 const ORDER = ["Order now", "Order this month", "Coming up"];
 const LATE = "Too late for full lead time: expedite";
-const n0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 const CSV = [["brand", "Brand"], ["status", "Status"], ["order_by_safe", "Order by (safe)"], ["order_by_latest", "Order by (latest)"],
   ["covers", "Covers"], ["cases", "Cases"], ["kg", "kg"], ["cbm", "CBM"], ["containers_needed", "Containers"], ["products", "Products"],
   ["reason", "Why"]];
+const DAY = 86400000;
+const t = (iso) => Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`);
 
-// What to order: every brand's next order in one table, most urgent first.
+// Filters behind the KPI cards (presentation only: the same brands the API returns, narrowed).
+const FILTERS = {
+  all: () => true,
+  now: (b) => b.next_order.status === "Order now",
+  decision: (b) => b.next_order.status === "Order now" || b.next_order.status === "Order this month",
+  hold: (b) => (b.next_order.products_on_hold || 0) > 0,
+  late: (b) => (b.late_orders || 0) > 0 || b.next_order.status === LATE,
+};
+
+// "Approve" only records, in this browser, that the buyer reviewed the order. Nothing is sent or ordered.
+function useApprovals() {
+  const [a, setA] = useState(() => { try { return JSON.parse(localStorage.getItem("approved-orders") || "{}"); } catch { return {}; } });
+  const approve = useCallback((id) => setA((x) => {
+    const n = { ...x, [id]: new Date().toISOString() };
+    try { localStorage.setItem("approved-orders", JSON.stringify(n)); } catch { /* storage blocked */ }
+    return n;
+  }), []);
+  return [a, approve];
+}
+
+// ---------------------------------------------------------------- shipping timeline (Gantt)
+function ShippingTimeline({ rows, today, onOpen }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? rows : rows.slice(0, 10);
+  if (!shown.length) return null;
+  const t0 = Math.min(t(today), ...shown.map((b) => t(b.next_order.order_by_safe))) - 10 * DAY;
+  // Coverage: with stock data, an order "arrives by" safe date + 130 days and lasts about 3 months after arrival (the
+  // engine's ordering rule); without stock data, first_month..last_month are the months it covers.
+  const cover = (o) => (String(o.covers || "").startsWith("arrives")
+    ? [t(o.order_by_safe) + 130 * DAY, t(o.order_by_safe) + 130 * DAY + 91 * DAY]
+    : [t(o.first_month), t(o.last_month || o.first_month) + 31 * DAY]);
+  const ends = shown.map((b) => cover(b.next_order)[1]);
+  const t1 = Math.min(Math.max(...ends), t0 + 520 * DAY);
+  const pct = (x) => `${Math.max(0, Math.min(100, ((x - t0) / (t1 - t0)) * 100))}%`;
+  const width = (a, b) => `${Math.max(0.6, ((Math.min(b, t1) - Math.max(a, t0)) / (t1 - t0)) * 100)}%`;
+  const ticks = [];
+  for (let d = new Date(t0); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1, 1)) {
+    const x = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    if (x >= t0) ticks.push(x);
+  }
+  const tone = (s) => (s === "Order now" || s === LATE ? "var(--crit-fill)" : s === "Order this month" ? "var(--warn-fill)" : "var(--info-fill)");
+  return (
+    <section className="panel" aria-labelledby="tl-h">
+      <header>
+        <div>
+          <h2 id="tl-h">Shipping timeline</h2>
+          <p className="sub">Order by the <Term k="safe">safe date</Term>, ship 105 to 130 days, then about 3 months of stock</p>
+        </div>
+        <div className="legend-dots">
+          <span><i style={{ background: "var(--crit-fill)", borderRadius: "50%" }} />Order-by date</span>
+          <span><i style={{ background: "var(--info-bg)", border: "1px dashed var(--info-fill)" }} />At sea (105 to 130 days)</span>
+          <span><i style={{ background: "var(--ok-bg)", border: "1px solid var(--ok-line)" }} />Months the order covers</span>
+        </div>
+      </header>
+      <div className="gantt" role="img" aria-label="Order, shipping and coverage window per brand">
+        <div className="gantt-scale" aria-hidden="true">
+          {ticks.map((x, i) => <span key={x} className={i % 3 ? "minor" : ""} style={{ left: pct(x) }}>{shortMonth(new Date(x).toISOString().slice(0, 7))}</span>)}
+        </div>
+        <div className="gantt-body" style={{ paddingTop: 22 }}>
+          <div className="gantt-grid" aria-hidden="true">
+            {ticks.map((x, i) => <i key={x} className={i % 3 ? "minor" : ""} style={{ left: pct(x) }} />)}
+            <span className="g-today" style={{ left: pct(t(today)) }}><span className="g-today-label">Today</span></span>
+          </div>
+          {shown.map((b) => {
+            const o = b.next_order;
+            const ob = t(o.order_by_safe);
+            const [coverA, coverB] = cover(o);
+            return (
+              <div className="gantt-row" key={b.brand}>
+                <button type="button" className="nm" onClick={() => onOpen(b.brand)} title={`Open ${b.brand}`}>{b.brand.replace(/\s*\(item code\)$/i, "")}</button>
+                <div className="gantt-lane">
+                  {ob > t(today) && <span className="g-seg g-wait" style={{ left: pct(t(today)), width: width(t(today), ob) }} />}
+                  <span className="g-seg g-ship" style={{ left: pct(ob + 105 * DAY), width: width(ob + 105 * DAY, ob + 130 * DAY) }}
+                        title={`At sea: arrives between ${shortDate(new Date(ob + 105 * DAY).toISOString())} and ${shortDate(new Date(ob + 130 * DAY).toISOString())}`} />
+                  <span className="g-seg g-cover" style={{ left: pct(coverA), width: width(coverA, coverB) }}
+                        title={String(o.covers || "").startsWith("arrives") ? `${o.covers}; lasts about 3 months after arrival` : `Covers ${o.covers}`} />
+                  <span className="g-seg g-order" style={{ left: pct(ob), background: tone(o.status) }}
+                        title={`Order by ${shortDate(o.order_by_safe, true)} (${o.status})`} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {rows.length > 10 && (
+        <div style={{ marginTop: 12 }}><button type="button" className="btn ghost" onClick={() => setAll(!all)}>{all ? "Show the 10 most urgent" : `Show all ${rows.length} brands`}</button></div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- brand drawer
+function BrandDrawer({ brand, today, onClose, approved, onApprove }) {
+  const [d, setD] = useState(null);
+  const [proj, setProj] = useState(null);
+  const [err, setErr] = useState(null);
+  const toast = useToast();
+  useEffect(() => {
+    if (!brand) return;
+    setD(null); setProj(null); setErr(null);
+    getJSON(`/brands/${encodeURIComponent(brand)}`).then(setD).catch(setErr);
+    getJSON(`/projection?brand=${encodeURIComponent(brand)}&months=6`).then(setProj).catch(() => setProj({ available: false }));
+  }, [brand]);
+  const o = d?.orders?.[0];
+  const lines = (o?.lines || []).filter((l) => !l.on_hold);
+  // One entry per product (a product can also have a "pulled forward" line).
+  const atRisk = [...new Map(lines.filter((l) => l.runs_out_before_arrival || l.floor_dip_date).map((l) => [l.product_id, l])).values()];
+  const top = [...lines].sort((a, b) => b.cases - a.cases);
+  const maxCases = Math.max(1, ...top.map((l) => l.cases));
+  const adjust = () => {
+    try { sessionStorage.setItem("ask-prefill", `For ${brand}: `); } catch { /* blocked */ }
+    window.location.hash = "/ask";
+  };
+  return (
+    <Drawer open={!!brand} onClose={onClose} title={brand ? <BrandName name={brand} /> : ""}
+      footer={o && (
+        <>
+          <a className="btn ghost" href={`#/brand/${encodeURIComponent(brand)}`}>Open brand page</a>
+          <button type="button" className="btn" onClick={adjust}><SlidersHorizontal className="ico-sm" />Adjust</button>
+          <button type="button" className="btn primary" disabled={!!approved[o.order_id]}
+                  onClick={() => { onApprove(o.order_id); toast(`${brand}: marked as approved on this computer. Nothing is sent or ordered.`); }}>
+            <CheckCircle2 className="ico-sm" />{approved[o.order_id] ? "Approved" : "Approve"}
+          </button>
+        </>
+      )}>
+      {err && <p className="error">Could not load {brand}: {String(err.message || err)}</p>}
+      {!d && !err && <div className="skeleton"><span /><span /><span /></div>}
+      {d && (
+        <>
+          {o ? (
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <StatusPill status={o.status} />
+              <span className="small">Order by <b>{shortDate(o.order_by_safe, true)}</b> ({relDays(o.order_by_safe, today)}), latest {shortDate(o.order_by_latest, true)}</span>
+            </div>
+          ) : <p className="note">No upcoming orders in the 12-month plan.</p>}
+          <div className="mini-stats">
+            <div><span>Cases to order</span><b>{o ? fmt0(o.cases) : "-"}</b></div>
+            <div><span>Weight</span><b>{o ? weight(o.kg) : "-"}</b></div>
+            <div><span>Containers</span><b>{o?.containers_needed ?? (o?.containers != null ? `~${o.containers}` : "-")}</b></div>
+          </div>
+          <div>
+            <h3>Stock runway <Tip text="Months of stock on hand at the last 6 months' sales pace, against the 3-month floor." /></h3>
+            <RunwayBar months={d.info?.months_of_cover} />
+            <p className="note">{d.info?.on_hand_cases != null ? `${cases(d.info.on_hand_cases)} on hand; ` : ""}sells about {cases(d.info?.monthly_cases)} a month.</p>
+          </div>
+          {proj?.available && proj.months.length > 1 && (
+            <div>
+              <h3>Projected stock, next {proj.months.length} months</h3>
+              <div className="chart" style={{ height: 180 }}>
+                <ResponsiveContainer>
+                  <ComposedChart data={proj.months} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="month" tickFormatter={shortMonth} tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={(v) => fmt0(v)} />
+                    <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                      <div className="tip"><strong>{monthLabel(label)}</strong>
+                        {payload.map((p) => <div key={p.dataKey}>{p.name}: {cases(p.value)}</div>)}</div>) : null} />
+                    <Area dataKey="projected_with_suggested_order" name="With the suggested order" stroke="var(--ok-fill)" fill="var(--ok-bg)" strokeWidth={2} />
+                    <Line dataKey="projected_stock" name="With no new order" stroke="var(--chart-1)" strokeDasharray="4 3" dot={false} strokeWidth={1.5} />
+                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="legend-dots">
+                <span><i style={{ background: "var(--ok-fill)" }} />With the suggested order</span>
+                <span><i style={{ background: "var(--chart-1)" }} />No new order</span>
+                <span><i style={{ background: "var(--crit-fill)" }} />3-month floor</span>
+              </div>
+            </div>
+          )}
+          {atRisk.length > 0 && (
+            <div>
+              <h3>SKUs at risk ({atRisk.length})</h3>
+              <div className="sku-list">
+                {atRisk.slice(0, 8).map((l) => (
+                  <div key={l.product_id}>
+                    <span><a href={`#/product/${encodeURIComponent(l.product_id)}`} style={{ fontWeight: 600 }}>{l.name}</a>
+                      <span className="muted small"> {l.product_id}</span></span>
+                    <Pill tone="crit" icon={AlertTriangle}>{l.runs_out_before_arrival ? "Runs out before arrival" : `Below floor ${l.floor_dip_date <= today ? "now" : `from ${shortDate(l.floor_dip_date)}`}`}</Pill>
+                  </div>
+                ))}
+              </div>
+              {atRisk.length > 8 && <p className="note">+{atRisk.length - 8} more on the brand page.</p>}
+            </div>
+          )}
+          {top.length > 0 && (
+            <div>
+              <h3>Suggested order, by product</h3>
+              <div style={{ display: "grid", gap: 8 }}>
+                {top.slice(0, 8).map((l) => (
+                  <div key={`${l.product_id}-${l.pulled_forward}`} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 140px 64px", gap: 10, alignItems: "center", fontSize: 13 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.reason}>{l.name}{l.pulled_forward ? <span className="muted"> (pulled forward)</span> : null}</span>
+                    <span className="bar-track"><span className="bar-fill fill-info" style={{ width: `${(l.cases / maxCases) * 100}%` }} /></span>
+                    <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt0(l.cases)}</span>
+                  </div>
+                ))}
+              </div>
+              {top.length > 8 && <p className="note">+{top.length - 8} more products; {cases(o.cases)} in total.</p>}
+            </div>
+          )}
+          {o?.reason && <p className="note">{o.reason}</p>}
+        </>
+      )}
+    </Drawer>
+  );
+}
+
+// ---------------------------------------------------------------- page
 export default function Home() {
   const sum = useData("/summary");
   const br = useData("/brands");
+  const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("all");
   const [q, setQ] = useState("");
+  const [sel, setSel] = useState(-1);
+  const [open, setOpen] = useState(null);
+  const [approved, approve] = useApprovals();
+  const tableRef = useRef(null);
 
+  const withOrder = useMemo(() => (br.data ? br.data.brands.filter((b) => b.next_order) : []), [br.data]);
   const rows = useMemo(() => {
-    if (!br.data) return [];
     const needle = q.trim().toLowerCase();
-    return br.data.brands.filter((b) => b.next_order)
+    return withOrder.filter(FILTERS[filter])
       .filter((b) => status === "all" || b.next_order.status === status)
       .filter((b) => !needle || b.brand.toLowerCase().includes(needle));
-  }, [br.data, status, q]);
+  }, [withOrder, filter, status, q]);
+  useEffect(() => setSel(-1), [filter, status, q]);
+
+  const onKey = (e) => {
+    if (!rows.length) return;
+    if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); setSel((s) => Math.min(rows.length - 1, s + 1)); }
+    else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
+    else if (e.key === "Enter" && sel >= 0) { e.preventDefault(); setOpen(rows[sel].brand); }
+  };
+  useEffect(() => { tableRef.current?.querySelector("tr.sel")?.scrollIntoView({ block: "nearest" }); }, [sel]);
 
   if (sum.error || br.error) return <ErrorBox error={sum.error || br.error} />;
-  if (!sum.data || !br.data) return <Loading />;
+  if (!sum.data || !br.data) return <><SkeletonCards /><div className="skeleton"><span /><span /><span /></div></>;
   const s = sum.data;
   const today = s.today;
   const lateBrands = br.data.brands.filter((b) => b.late_orders > 0);
+  const toggle = (f) => setFilter((x) => (x === f ? "all" : f));
 
   return (
     <div data-ready="home">
-      <p className="lead">
-        Sales data up to the end of {monthLabel(s.data_through)}. Each order is sized to last about 3 months after it arrives;
-        shipping takes 105 to 130 days, so the safe order date assumes 130.
-      </p>
-      {s.gross_need ? <GrossBanner text={s.gross_need_note} /> : <Banner tone={s.on_order_missing ? "warn" : ""}>{s.stock_note}</Banner>}
-
-      <div className="figures cols-4" style={{ marginBottom: 32 }}>
-        <Figure k="Brand orders to place now" v={n0.format(s.orders_now)} unit="orders" status={["Order now", "st-red"]}
-          d={`${cases(s.orders_now_cases)}${s.orders_now_cbm != null ? `, ${n0.format(s.orders_now_cbm)} CBM (${s.orders_now_containers} containers if each brand ships alone)` : ""}`} />
-        <Figure k="Products needing a decision" v={n0.format(s.products_needing_decision)} unit="products" d="Now or this month" />
-        <Figure k="Products on hold" v={n0.format(s.holds)} unit="products"
-          d={<>{s.holds_in_plan} still in the plan. <a href="#/questions">Confirm releases</a></>} />
-        <Figure k="Orders already too late" v={n0.format(s.orders_too_late)} unit="orders"
-          status={s.orders_too_late ? ["Expedite or expect a shortfall", "st-red"] : ["None", "st-green"]} d={cases(s.cases_too_late)} />
+      <div className="page-head">
+        <div>
+          <h2>What to order</h2>
+          <p>Sales data runs to the end of {monthLabel(s.data_through)}. Each order is sized to last about 3 months after it arrives;
+            shipping takes 105 to 130 days, so the <Term k="safe">safe order date</Term> assumes 130.</p>
+        </div>
+        <button className="btn" type="button" onClick={() => downloadCSV(`next-orders-${today}.csv`, rows.map((b) => ({ brand: b.brand, ...b.next_order })), CSV)}>
+          <Download className="ico-sm" />Export CSV
+        </button>
       </div>
 
-      <Panel id="orders-h" title="Next order per brand" sub="Sorted by order date"
-        actions={<button className="btn" type="button" onClick={() => downloadCSV(`next-orders-${today}.csv`, rows.map((b) => ({ brand: b.brand, ...b.next_order })), CSV)}>Export CSV</button>}>
-        <Toolbar>
-          <label>Status
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="all">All</option>
+      <div className={`callout ${s.gross_need ? "info" : "warn"}`} role="note">
+        <Ship className="ico" aria-hidden="true" />
+        <div><b>{s.gross_need ? "Gross need." : "Check before ordering."}</b> {s.gross_need ? s.gross_need_note : s.stock_note}</div>
+      </div>
+
+      <div className="kpis stagger">
+        <KPI icon={ShoppingCart} tone="crit" k="Brand orders to place now" v={s.orders_now} unit="orders" onClick={() => toggle("now")} pressed={filter === "now"}
+             d={<>{cases(s.orders_now_cases)}{s.orders_now_cbm != null ? <>, {fmt0(s.orders_now_cbm)} <Term k="cbm">CBM</Term></> : null}{s.orders_now_containers != null ? ` · ${fmt0(s.orders_now_containers)} containers if each brand ships alone` : ""}</>} />
+        <KPI icon={PackageCheck} tone="warn" k="Products needing a decision" v={s.products_needing_decision} unit="products" d="Now or this month"
+             onClick={() => toggle("decision")} pressed={filter === "decision"} />
+        <KPI icon={PauseCircle} tone="info" k="Products on hold" v={s.holds} unit="products" onClick={() => toggle("hold")} pressed={filter === "hold"}
+             d={<>{fmt0(s.holds_in_plan)} still in the plan · <a href="#/questions" onClick={(e) => e.stopPropagation()}>confirm releases</a></>} />
+        <KPI icon={AlertOctagon} tone={s.orders_too_late ? "crit" : "ok"} k="Orders already too late" v={s.orders_too_late} unit="orders"
+             onClick={() => toggle("late")} pressed={filter === "late"}
+             d={s.orders_too_late ? `${cases(s.cases_too_late)}: expedite or expect a shortfall` : "None"} />
+      </div>
+
+      <ShippingTimeline rows={rows} today={today} onOpen={setOpen} />
+
+      <section className="panel" aria-labelledby="orders-h">
+        <header>
+          <div>
+            <h2 id="orders-h">Next order per brand</h2>
+            <p className="sub">Sorted by order date{filter !== "all" ? " · filtered by the card above" : ""}. Use j / k or the arrow keys, Enter to open.</p>
+          </div>
+          <div className="panel-side">
+            <label className="search"><Search className="ico" aria-hidden="true" /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter brands" aria-label="Filter brands" /></label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
+              <option value="all">All statuses</option>
               {ORDER.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
-          </label>
-          <label>Brand
-            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by brand name" />
-          </label>
-          <span className="count" role="status">{rows.length} of {br.data.brands.filter((b) => b.next_order).length} brands</span>
-        </Toolbar>
-        <Table id="orders" caption="Next order for each brand: when to place it, how much, and why">
-          <thead>
-            <tr>
-              <th scope="col">Brand</th><th scope="col">Status</th><th scope="col">Order by</th><th scope="col">Covers</th>
-              <th scope="col" className="num">Cases</th><th scope="col" className="num">Weight</th><th scope="col">Containers</th>
-              <th scope="col" className="num">Products</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => {
-              const o = b.next_order;
-              const passed = o.order_by_safe < today;
-              return (
-                <tr key={b.brand}>
-                  <th scope="row"><a href={`#/brand/${encodeURIComponent(b.brand)}`}>{b.brand}</a>
-                    {(b.below_floor_now > 0 || b.below_floor_soon > 0) && (
-                      <div className="small st-red">{b.below_floor_now} below 3 months of stock now{b.below_floor_soon ? `, ${b.below_floor_soon} soon` : ""}</div>)}
-                  </th>
-                  <td data-label="Status"><StatusText status={o.status} /></td>
-                  <td data-label="Order by">{niceDate(passed ? o.order_by_latest : o.order_by_safe, today)}
-                    <div className="small muted">{passed ? "latest date; the safe date has passed" : `latest ${niceDate(o.order_by_latest, today, { relative: false })}`}</div></td>
-                  <td data-label="Covers">{o.covers}</td>
-                  <td className="num" data-label="Cases">{cases(o.cases, false)}</td>
-                  <td className="num" data-label="Weight">{weight(o.kg)}</td>
-                  <td data-label="Containers">{o.cbm != null ? <ContainerLine o={o} /> : o.containers != null ? `about ${o.containers}` : "-"}</td>
-                  <td className="num" data-label="Products">{o.products}{o.products_on_hold ? <div className="small muted">+{o.products_on_hold} on hold</div> : null}</td>
+            {filter !== "all" && <button type="button" className="btn ghost" onClick={() => setFilter("all")}>Clear card filter</button>}
+            <span className="small muted" role="status">{rows.length} of {withOrder.length} brands</span>
+          </div>
+        </header>
+        {rows.length === 0 ? <EmptyState icon={ShoppingCart} title="No brand matches">Clear the filters to see every brand's next order.</EmptyState> : (
+          <div className="tbl-wrap tall" ref={tableRef} tabIndex={0} onKeyDown={onKey} role="region" aria-label="Next order for each brand">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th scope="col">Brand</th><th scope="col">Status</th><th scope="col">Order by</th>
+                  <th scope="col" className="num">Cases</th><th scope="col" className="num hide-sm">Weight</th>
+                  <th scope="col" className="num hide-sm"><Term k="cbm">CBM</Term></th><th scope="col">Containers</th>
+                  <th scope="col" className="hide-sm">SKUs at risk <Tip text="Products below the 3-month floor now (red) or soon (amber), out of the brand's active products." /></th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </Table>
-        {rows.length === 0 && <p className="note">No brand matches these filters.</p>}
-      </Panel>
+              </thead>
+              <tbody>
+                {rows.map((b, i) => {
+                  const o = b.next_order;
+                  const passed = o.order_by_safe < today;
+                  return (
+                    <tr key={b.brand} className={`clickable${i === sel ? " sel" : ""}`} onClick={() => { setSel(i); setOpen(b.brand); }} aria-selected={i === sel}>
+                      <th scope="row">
+                        <BrandName name={b.brand} sub={`${o.products} product${o.products === 1 ? "" : "s"}${o.products_on_hold ? ` · ${o.products_on_hold} on hold` : ""}`} />
+                      </th>
+                      <td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><StatusPill status={o.status} />{approved[o.order_id] && <Pill tone="ok" icon={CheckCircle2}>Approved</Pill>}</div></td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{shortDate(passed ? o.order_by_latest : o.order_by_safe, true)}
+                          <span className={`small ${passed ? "st-red" : "muted"}`} style={{ fontWeight: 500 }}> · {relDays(passed ? o.order_by_latest : o.order_by_safe, today)}</span></div>
+                        <div className="small muted">{passed ? "latest date; the safe date has passed" : `latest ${shortDate(o.order_by_latest, true)}`}</div>
+                      </td>
+                      <td className="num" style={{ fontWeight: 600 }}>{fmt0(o.cases)}</td>
+                      <td className="num hide-sm">{weight(o.kg)}</td>
+                      <td className="num hide-sm">{o.cbm != null ? fmt1(o.cbm) : "-"}</td>
+                      <td>{o.containers_needed != null
+                        ? <ContainerFill n={o.containers_needed} lastPct={o.last_container_fill_pct} cbm={o.cbm} estimated={o.cbm_estimated_pct > 0} />
+                        : o.containers != null ? <span className="muted">about {fmt1(o.containers)}</span> : <span className="muted">-</span>}</td>
+                      <td className="hide-sm"><RiskBar now={b.below_floor_now} soon={b.below_floor_soon} total={b.active_products ?? b.products} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {lateBrands.length > 0 && (
-        <Panel id="late-h" title="Too late for the full shipping time" sub="These arrive later than a normal order could">
-          <Table id="late" caption="Brands with orders that can no longer arrive in time by sea at the normal lead time">
-            <thead><tr><th scope="col">Brand</th><th scope="col" className="num">Orders</th><th scope="col" className="num">Cases</th><th scope="col">Action</th></tr></thead>
-            <tbody>
-              {lateBrands.map((b) => (
-                <tr key={b.brand}>
-                  <th scope="row"><a href={`#/brand/${encodeURIComponent(b.brand)}`}>{b.brand}</a></th>
-                  <td className="num" data-label="Orders">{b.late_orders}</td>
-                  <td className="num" data-label="Cases">{cases(b.late_cases, false)}</td>
-                  <td data-label="Action"><span className={STATUS[LATE].cls}>Expedite or expect a shortfall</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Panel>
+        <section className="panel" aria-labelledby="late-h">
+          <header><div><h2 id="late-h">Too late for the full shipping time</h2><p className="sub">These arrive later than a normal order could: expedite or expect a shortfall</p></div></header>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th scope="col">Brand</th><th scope="col" className="num">Orders</th><th scope="col" className="num">Cases</th><th scope="col">Action</th></tr></thead>
+              <tbody>
+                {lateBrands.map((b) => (
+                  <tr key={b.brand} className="clickable" onClick={() => setOpen(b.brand)}>
+                    <th scope="row"><BrandName name={b.brand} /></th>
+                    <td className="num">{b.late_orders}</td>
+                    <td className="num">{fmt0(b.late_cases)}</td>
+                    <td><StatusPill status={LATE} label="Expedite or expect a shortfall" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
+
+      <BrandDrawer brand={open} today={today} onClose={() => setOpen(null)} approved={approved} onApprove={approve} />
     </div>
   );
 }

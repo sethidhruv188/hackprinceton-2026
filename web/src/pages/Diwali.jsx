@@ -3,8 +3,8 @@ import { useData } from "../useData.js";
 import { cases, monthLabel, niceDate, shortMonth, weight } from "../format.js";
 import { ErrorBox, GrossBanner, Loading, Panel, Table } from "../components.jsx";
 
-const MUTED = "#5d6066", LINE = "#dcdde1";
-const KIND = { "Diwali month": "#e63336", "pre-Diwali month": "#1d1d1f", other: "#b4b6bc" };
+const MUTED = "var(--muted)", LINE = "var(--line-strong)";
+const KIND = { "Diwali month": "var(--accent)", "pre-Diwali month": "var(--chart-1)", other: "var(--line-strong)" };
 const axis = { stroke: LINE, tick: { fill: MUTED, fontSize: 12 }, tickLine: false };
 
 function Season({ s, today, first }) {
@@ -66,7 +66,7 @@ export default function Diwali() {
               <CartesianGrid stroke={LINE} vertical={false} />
               <XAxis dataKey="month" tickFormatter={shortMonth} minTickGap={14} {...axis} />
               <YAxis width={64} tickFormatter={(v) => `${v.toLocaleString("en-US")}${useKg ? " t" : ""}`} {...axis} axisLine={false} />
-              <Tooltip formatter={(v) => (useKg ? weight(v * 1000) : cases(v))} labelFormatter={monthLabel} cursor={{ fill: "#f6f6f7" }}
+              <Tooltip formatter={(v) => (useKg ? weight(v * 1000) : cases(v))} labelFormatter={monthLabel} cursor={{ fill: "var(--surface-2)" }}
                 contentStyle={{ border: `1px solid ${LINE}`, borderRadius: 0, fontSize: 13 }} />
               <Bar dataKey="value" name={useKg ? "Sold (weight)" : "Sold (cases)"} isAnimationActive={false}>
                 {rows.map((r) => <Cell key={r.month} fill={KIND[r.kind] || KIND.other} />)}

@@ -1,4 +1,8 @@
+import { AlertOctagon, ArrowRight, Boxes, Container, ShoppingCart, Tags } from "lucide-react";
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useData } from "../useData.js";
+import { monthLabel, shortMonth } from "../format.js";
+import { BrandName, EmptyState, KPI, SkeletonCards, StatusPill, Term, fmt0, fmt1, relDays, shortDate } from "../ui.jsx";
 import { niceDate, cases, pct } from "../format.js";
 
 const n0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -124,6 +128,82 @@ function Figure({ k, v, unit, d, status }) {
   );
 }
 
+// Executive summary: the four numbers a CEO asks first, stock coverage ahead, and the five most urgent actions.
+const URGENT = { "Too late for full lead time: expedite": 0, "Order now": 1, "Order this month": 2, "Coming up": 3 };
+function Executive({ today }) {
+  const sum = useData("/summary");
+  const br = useData("/brands");
+  const proj = useData("/projection?months=6");
+  if (sum.error || br.error) return null;
+  if (!sum.data || !br.data) return <SkeletonCards />;
+  const s = sum.data;
+  const atRisk = br.data.brands.filter((b) => (b.below_floor_now || 0) > 0);
+  const skusNow = br.data.brands.reduce((n, b) => n + (b.below_floor_now || 0), 0);
+  const actions = br.data.brands.filter((b) => b.next_order)
+    .sort((a, b) => (URGENT[a.next_order.status] ?? 9) - (URGENT[b.next_order.status] ?? 9)
+      || a.next_order.order_by_safe.localeCompare(b.next_order.order_by_safe)).slice(0, 5);
+  const p = proj.data;
+  return (
+    <>
+      <div className="kpis stagger">
+        <KPI big icon={ShoppingCart} tone="crit" k="Cases to order now" v={s.orders_now_cases} unit="cases" d={`${fmt0(s.orders_now)} brand orders`} />
+        <KPI big icon={Container} tone="info" k="Containers" v={s.orders_now_containers ?? null} unit="containers" d="If each brand ships alone" />
+        <KPI big icon={Boxes} k={<>Volume (<Term k="cbm">CBM</Term>)</>} v={s.orders_now_cbm != null ? Math.round(s.orders_now_cbm) : null} unit="CBM"
+             d={s.cbm_estimated_pct > 0 ? `${fmt0(s.cbm_estimated_pct)}% from estimated case sizes` : "From case sizes"} />
+        <KPI big icon={AlertOctagon} tone={atRisk.length ? "warn" : "ok"} k="Brands at risk" v={atRisk.length} unit={`of ${br.data.brands.length}`}
+             d={`${fmt0(skusNow)} products below the 3-month floor now`} />
+      </div>
+      <div className="grid-2" style={{ marginBottom: 20 }}>
+        <section className="panel" aria-labelledby="cov-h">
+          <header><div><h2 id="cov-h">Stock coverage, next 6 months</h2><p className="sub">All products, in cases, from the engine's stock projection</p></div></header>
+          {!p ? <span className="sk" style={{ height: 220 }} /> : !p.available ? (
+            <EmptyState title="No stock projection">It appears once the engine runs with stock data (data/stock.csv).</EmptyState>
+          ) : (
+            <>
+              <div className="chart" style={{ height: 240 }}>
+                <ResponsiveContainer>
+                  <ComposedChart data={p.months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="month" tickFormatter={shortMonth} tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} width={56} tickFormatter={(v) => fmt0(v)} />
+                    <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                      <div className="tip"><strong>{monthLabel(label)}</strong>{payload.map((x) => <div key={x.dataKey}>{x.name}: {fmt0(x.value)} cases</div>)}</div>) : null} />
+                    <Area dataKey="projected_with_suggested_order" name="With the suggested orders" stroke="var(--ok-fill)" fill="var(--ok-bg)" strokeWidth={2} />
+                    <Line dataKey="projected_stock" name="With no new orders" stroke="var(--chart-1)" strokeDasharray="4 3" dot={false} strokeWidth={1.5} />
+                    <Line dataKey="floor_3_months" name="3-month floor" stroke="var(--crit-fill)" dot={false} strokeWidth={1.5} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="legend-dots">
+                <span><i style={{ background: "var(--ok-fill)" }} />With the suggested orders</span>
+                <span><i style={{ background: "var(--chart-1)" }} />No new orders</span>
+                <span><i style={{ background: "var(--crit-fill)" }} />3-month floor</span>
+              </div>
+            </>
+          )}
+        </section>
+        <section className="panel" aria-labelledby="act-h">
+          <header><div><h2 id="act-h">Top 5 urgent actions</h2><p className="sub">Most urgent first</p></div><a className="btn ghost" href="#/orders">All orders<ArrowRight className="ico-sm" /></a></header>
+          {actions.length === 0 ? <EmptyState icon={Tags} title="Nothing to order">No brand has an order in the 12-month plan.</EmptyState> : (
+            <div className="actions-list">
+              {actions.map((b) => (
+                <a key={b.brand} className="action" href={`#/brand/${encodeURIComponent(b.brand)}`}>
+                  <BrandName name={b.brand} />
+                  <span style={{ minWidth: 0 }}>
+                    <div className="t">{fmt0(b.next_order.cases)} cases</div>
+                    <div className="s">by {shortDate(b.next_order.order_by_safe, true)} · {relDays(b.next_order.order_by_safe, today)}</div>
+                  </span>
+                  <StatusPill status={b.next_order.status} />
+                </a>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}
+
 export default function Overview() {
   const { data, error, loading } = useData("/overview");
   if (error) return <p className="st-red" role="alert">Could not load the overview: {String(error.message || error)}</p>;
@@ -134,6 +214,13 @@ export default function Overview() {
 
   return (
     <div data-ready="overview">
+      <div className="page-head">
+        <div>
+          <h2>Overview</h2>
+          <p>As of {niceDate(today, null, { relative: false })}{demo ? " · demo data" : ""}. What to order now, how much room it needs, and where stock is thin.</p>
+        </div>
+      </div>
+      <Executive today={today} />
       <section className="panel" aria-labelledby="replay-h">
         <header>
           <h2 id="replay-h">Replaying real history: our forecaster against the 6-month average</h2>
