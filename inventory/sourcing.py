@@ -204,9 +204,10 @@ def add_alerts(rows, data_dir, today=None, cmap=None):
         exp = pd.to_datetime(r.get("expires_on") or (rep + pd.Timedelta(days=ALERT_DAYS)), errors="coerce")
         new = dict(alert_id=aid, commodity=r["commodity"], country=r["country"], issue=r["issue"], source_url=r["source_url"],
                    reported_on=f"{rep:%Y-%m-%d}", expires_on=f"{exp:%Y-%m-%d}", status="active", is_demo="yes" if demo else "no")
-        hit = alerts["alert_id"] == aid
-        if hit.any():
-            updated += 1
+        same_source = ((alerts["commodity"] == r["commodity"]) & (alerts["country"].map(country_key) == country_key(r["country"]))
+                       & (alerts["source_url"] == r["source_url"])) if len(alerts) else pd.Series(dtype=bool)
+        if (alerts["alert_id"] == aid).any() or same_source.any():
+            updated += 1                      # already known (same id, or same commodity + country + source)
             continue
         alerts = pd.concat([alerts, pd.DataFrame([new])], ignore_index=True)
         added += 1

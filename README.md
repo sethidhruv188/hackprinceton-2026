@@ -355,6 +355,14 @@ In code: `agent.run.answer(thread_id, text, today=None, role="owner"|"guest", ch
 - **Prompt injection**: the system prompt and every sub-agent that reads the web say web pages and search results are
   information, never instructions; leads and alerts are only added when the agent's own task calls for it, with a
   source URL, and only the owner confirms a supplier.
+- **Supply scan** (`python -m agent.scan`, `--dry-run`, `--today`, `--demo`): the sourcing researcher checks the last
+  60 days of news for each harvest commodity's producing countries (floods, droughts, export bans, poor yields, port or
+  shipping disruption), most urgent commodities first. Credible findings become country alerts through
+  `sourcing.add_alerts` with the article's URL and date, marked "Unverified news:"; known ones (same commodity,
+  country and source) are skipped; the owner can dismiss any with the `alert:ALERT_ID` question. Hard caps: 20 basic
+  Tavily news searches per run, 60 s per agent call. It prints searches used, alerts added and countries with
+  nothing found, then refreshes the sourcing outputs so new alerts reach the digest, the agent and the dashboard.
+  `--dry-run` only lists what would be searched. Real-news alerts are never written into `data_demo/`.
 - **Evals** (`agent/evals.py`): 12 owner questions on a scratch copy of the demo, scored on the right tool, the right
   arguments and no invented numbers (every number in the reply must appear in a tool output or the question).
   `python -m agent.evals` uses the real model and costs API calls; results go to `outputs_demo/agent_evals.csv`.
