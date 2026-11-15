@@ -363,7 +363,7 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
     L = pd.concat(lines, ignore_index=True) if lines else pd.DataFrame()
     L = L.reindex(columns=LINE_COLUMNS + STOCK_LINE_EXTRA).sort_values(["order_id", "on_hold", "pulled_forward", "cases"],
                                                                        ascending=[True, True, True, False]).reset_index(drop=True)
-    unconf = pd.DataFrame([dict(product_id=p, rule=r["rule_id"]) for p, r in candidates.items()])
+    unconf = pd.DataFrame([dict(product_id=p, rule=r["rule_id"]) for p, r in candidates.items()], columns=["product_id", "rule"])
     return dict(orders=o, lines=L, status=pstatus, projection=proj, harvest=harvest, harvest_candidates=unconf,
                 on_order_known=present["on_order"], cbm=cbm, stock_columns=present)
 
