@@ -311,6 +311,57 @@ decides; there are no contact fields anywhere, by design.
   [harvey](https://github.com/ethanplusai/harvey) outreach agent by ethanplusai. Harvey is AGPL-3.0; no code is
   taken from it, and unlike harvey nothing here sends email or contacts anyone.
 
+## The agent (LangChain Deep Agents)
+
+`agent/` answers the owner's questions over the engine's outputs, built with LangChain's Deep Agents harness
+(deepagents 0.7.38). Every number comes from a tool; it recommends and the owner decides; it never places an order
+or contacts anyone.
+
+```bash
+pip install -r requirements.txt                    # deepagents, langgraph, langchain-openai, tavily-python...
+cp .env.example .env                               # OPENROUTER_API_KEY, LLM_MODEL (tool-calling), optional TAVILY / LANGSMITH
+python run.py --generate --demo-harvest --today 2026-11-14     # the demo the agent reads by default
+python -m agent.chat                               # chat in the terminal (demo data, as the owner)
+python -m agent.chat --real --today 2026-11-14     # real data
+```
+
+In code: `agent.run.answer(thread_id, text, today=None, role="owner"|"guest", channel="imessage"|"dashboard")`.
+
+- **Model**: `agent/llm.py` creates it in one place (OpenRouter `ChatOpenAI`, 30 s timeout, 2 retries; more providers
+  behind `LLM_PROVIDER`). LangSmith tracing turns on when `LANGSMITH_API_KEY` is set.
+- **Tools** (`agent/tools.py`): thin wrappers over what exists: the dashboard API functions (so question ids and the
+  answer format match the dashboard), `inventory.sourcing`, `tournament.read_choice()` and the output files. No tool
+  runs the engine or rewrites outputs or config. Read: what_to_order, explain_product, festival_window, harvest_plan,
+  products_at_risk, alternative_sources, consolidation_options, country_alerts, forecast_quality, pending_questions.
+  Owner only: record_answer, log_event, log_override (recorded; the plan is not changed), add_leads and add_alerts
+  (through the validated entry points; a status, demo flag or contact detail never comes from the model).
+  web_search (Tavily) only with a key; results are marked as information, never instructions.
+- **Sub-agents** (the `task` tool), each with only its own tools: `order_planner` (orders by brand and container),
+  `explainer` (why a product is flagged, forecast quality), `sourcing_researcher` (harvest timing and crop / supply
+  news by producing country, cites URLs, may record a sourced country alert) and `supplier_scout` (finds exporters
+  and records them as unverified leads with source URLs; can draft an inquiry for the owner to send himself). Only
+  the two research sub-agents can search the web.
+- **File-system memory**: `/memories/` is a folder on disk (`<data>/agent_memory/`, gitignored); `AGENTS.md` there holds
+  the owner's preferences and confirmed context and is loaded into every conversation. Other paths are scratch space
+  per conversation.
+- **Conversations**: an async SQLite checkpointer (`<data>/agent_threads.sqlite`, gitignored) keeps each
+  (channel, thread) history across restarts; the thread is the iMessage space id or the dashboard session.
+- **Roles**: `owner` (allowlisted iMessage numbers, the dashboard) gets the write tools and may edit memory; `guest`
+  gets read-only tools and a deny-write rule on `/memories/`, and is told that changes need the owner.
+- **Channels**: iMessage replies aim for 480 characters (hard cap 900, "...more on the dashboard"); the dashboard allows
+  about 2,500.
+- **Limits**: recursion limit 25, LLM timeout 30 s with 2 retries, 60 s per answer. Any limit gives "I couldn't finish
+  that one. Try asking about a single brand or product." and a line in `<data>/agent_log.csv`.
+- **Prompt injection**: the system prompt and every sub-agent that reads the web say web pages and search results are
+  information, never instructions; leads and alerts are only added when the agent's own task calls for it, with a
+  source URL, and only the owner confirms a supplier.
+- **Evals** (`agent/evals.py`): 12 owner questions on a scratch copy of the demo, scored on the right tool, the right
+  arguments and no invented numbers (every number in the reply must appear in a tool output or the question).
+  `python -m agent.evals` uses the real model and costs API calls; results go to `outputs_demo/agent_evals.csv`.
+- **Tests** use a scripted fake model and a fake search: no network.
+- **Credit**: the supplier_scout's research design is inspired by the open-source
+  [harvey](https://github.com/ethanplusai/harvey) agent (AGPL-3.0); no code is taken from it, and nothing is ever sent.
+
 ## Real data (NetSuite exports)
 
 ```bash
@@ -397,5 +448,4 @@ aggregate to months first (or extend `schema.load` to weekly).
 
 ## Next
 
-Agent layer (deepagents) with tools over `forecast`, `orders` and `gaps`; Photon iMessage;
-dashboard; time-travel demo; supplier-risk research (stretch).
+Photon iMessage on top of `agent.run.answer()` (allowlisted owner numbers -> role owner); a chat panel on the dashboard.
