@@ -1,0 +1,34 @@
+commodity,group,prefixes,match,exclude,harvest,note
+mixed_dal,dals,AD|BD,panchratna|panchmel|mixed dal|mix dal,,mixed,several pulses in one pack: ask the owner which crop drives buying
+horse_gram,dals,AD|BD,horse ?gram|kulthi,,yes,
+black_eye,dals,AD|BD,black ?eyed?|lobia|chori|chawli|cow ?peas?,,yes,
+pinto,dals,AD|BD,pinto,,yes,
+rajma,dals,AD|BD,rajma|kidney,,yes,
+urad,dals,AD|BD,urad|udad|black gram,,yes,
+moong,dals,AD|BD,moong|mung,,yes,
+moth,dals,AD|BD,moth|matki,,yes,"""Masoor Whole (Matki)"" also matches masoor: flagged as ambiguous"
+masoor,dals,AD|BD,masoor|red lentils?|lentils?,,yes,
+toor,dals,AD|BD,toor|tuvar|tur|arhar|pigeon ?peas?,,yes,
+chickpea,dals,AD|BD,chana|kabuli|chick ?peas?|garbanzo,,yes,kabuli and desi / kala chana
+val,dals,AD|BD,val|lima|field beans?,,yes,
+peas,dals,AD|BD,vatana|matar|peas?,,yes,dry peas (green / yellow vatana)
+khichdi_mix,rice,AR|IG,khichdi,,no,processed rice-and-dal mix: not bought by harvest
+kanki,rice,AR|IG,kanki,,yes,broken rice from milling; follows its parent rice
+basmati,rice,AR|IG,basmati|sella,,yes,incl. sella / golden sella / brown basmati
+sona_masoori,rice,AR|IG,sona ?masoo?ri|masoori|masuri,,yes,
+ponni,rice,AR|IG,ponni,,yes,
+kolam,rice,AR|IG,kolam,,yes,
+idli_rice,rice,AR|IG,idli,,yes,
+matta,rice,AR|IG,matta,,yes,
+jeerakasala,rice,AR|IG,jeera ?kas?ala|jeerakashala,,yes,
+gujarat17,rice,AR|IG,gujarat ?17,,yes,
+kamod,rice,AR|IG,kamod,,yes,
+mawa,nuts,AN|BN,mawa|khoya,,no,milk powder: not a harvest crop
+almond,nuts,AN|BN,almonds?|badam,,yes,
+cashew,nuts,AN|BN,cashews?|kaju,,yes,
+walnut,nuts,AN|BN,walnuts?|akhrot,,yes,
+peanut,nuts,AN|BN,peanuts?|groundnuts?,,yes,
+raisin,nuts,AN|BN,raisins?|kishmish|munakka,,yes,
+coconut,nuts,AN|BN,coconut|copra,,yes,desiccated coconut / powder / flakes
+pistachio,nuts,AN|BN,pistachios?|pista,,yes,
+fig,nuts,AN|BN,anjeer|figs?,,yes,

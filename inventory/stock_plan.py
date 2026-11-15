@@ -99,14 +99,20 @@ def harvest_rules(path=ROOT / "config" / "harvest.csv"):
 
 
 def harvest_members(products, rules):
-    """{product_id: rule row} for confirmed rules; unconfirmed rule matches returned separately."""
+    """{product_id: rule row} for confirmed rules; unconfirmed rule matches returned separately.
+    A rule matches by name regex (`match`, `category`, `exclude`), or lists its products explicitly in
+    `product_ids` ("A|B|C", used by inventory/harvest.py). The first rule that claims a product wins."""
     confirmed, candidates = {}, {}
     for r in rules.to_dict("records"):
-        m = products[products["name"].astype(str).str.contains(r["match"], case=False, regex=True, na=False)]
-        if r.get("category"):
-            m = m[m["category"] == r["category"]]
-        if r.get("exclude"):
-            m = m[~m["name"].astype(str).str.contains(r["exclude"], case=False, regex=True, na=False)]
+        ids = r.get("product_ids")
+        if isinstance(ids, str) and ids.strip():
+            m = products[products["product_id"].isin(set(ids.split("|")))]
+        else:
+            m = products[products["name"].astype(str).str.contains(r["match"], case=False, regex=True, na=False)]
+            if r.get("category"):
+                m = m[m["category"] == r["category"]]
+            if r.get("exclude"):
+                m = m[~m["name"].astype(str).str.contains(r["exclude"], case=False, regex=True, na=False)]
         target = confirmed if str(r["confirmed"]).strip().lower() == "yes" else candidates
         for pid in m["product_id"]:
             target.setdefault(pid, r)

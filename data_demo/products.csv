@@ -59,3 +59,13 @@ P057,Lotus Bulk Catering item 1,bulk_catering,180,30,2.15,Country A,Country B
 P058,Peacock Bulk Catering item 2,bulk_catering,180,30,3.28,Country A,Country B
 P059,Monsoon Bulk Catering item 3,bulk_catering,180,30,4.17,Country A,Country B
 P060,Banyan Bulk Catering item 4,bulk_catering,180,30,2.03,Country A,Country B
+AD201,Sunrise Toor Dal 4 lb X 10,lentils_beans,365,130,4.19,Country A,Country B
+AD202,Sunrise Moong Dal 4 lb X 10,lentils_beans,365,130,3.6,Country A,Country B
+BD301,Chana Dal 55 Lb X,lentils_beans,365,130,3.57,Country A,Country B
+AD299,Sunrise Panchratna Dal 2 lb X 20,lentils_beans,365,130,4.64,Country A,Country B
+AN401,Lotus Almond 14 oz X 20,nuts_dry_fruits,365,130,4.85,Country A,Country B
+AN402,Lotus Cashew Whole 14 oz X 20,nuts_dry_fruits,365,130,5.37,Country A,Country B
+AN403,Lotus Green Raisin 14 oz X 20,nuts_dry_fruits,365,130,1.56,Country A,Country B
+AN499,Lotus Alo Bukhara 14 oz X 20,nuts_dry_fruits,365,130,3.03,Country A,Country B
+AR501,Peacock Basmati Rice 10 lb X 4,rice_flour,365,130,3.78,Country A,Country B
+AR502,Peacock Idli Rice 20 lb X 2,rice_flour,365,130,1.88,Country A,Country B

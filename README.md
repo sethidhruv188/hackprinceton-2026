@@ -241,6 +241,37 @@ When `data/raw/Inventory/CurrentInventory.xlsx` exists, `run.py` rebuilds `data/
   stock at arrival. Months past the 12-month forecast reuse the same month a year earlier ("extended").
   Unconfirmed rows (mango pulp, chilli, turmeric, cumin) only appear as questions to the owner.
 
+### Harvest-season buying (dals, rice, nuts and dry fruits)
+
+Owner's rule: order about one month before the harvest in the source country, so the order comes from the new
+crop, and make it last until the next harvest's stock arrives (`inventory/harvest.py`).
+
+- **Commodity map** (`config/commodity_map.csv`): the item-code prefix picks the group (AD/BD dals, AR/IG rice,
+  AN/BN nuts and dry fruits) and whole-word keywords in the name pick the commodity (toor, moong, basmati, almond...);
+  rows are tried in order, first match wins. Processed goods (khichdi mix, milk mawa) are mapped with `harvest = no`.
+  Products with no keyword, several commodities or a mixed pack go to `outputs/commodity_unmapped.csv` and become
+  `commodity:PID` questions. Words like "Bombay Import" or "India Gate" are shown as a starting guess for the
+  origin, never as a confirmation.
+- **Harvest calendar** (`config/harvest_calendar.csv`): one row per commodity and producing country, seeded only
+  from cited sources (`source_url`, `confidence`); months are blank where the source doesn't state them, and every
+  row starts `confirmed_by_owner = no`. The owner confirms a row with the existing `harvest:<commodity>_<country>`
+  question (yes = the cited months; "harvest Oct-Dec" in the note corrects them; no = not bought by harvest from there).
+- **Orders**: a confirmed row with months becomes a rule like the ones in `config/harvest.csv` (order month = harvest
+  start - `order_months_before` (default 1); arrival = the month of order-by + 130 days; cover = 12 / crops per
+  year) and goes through the existing harvest-buy calculation and brand/container grouping. The owner's rice rule in
+  `config/harvest.csv` keeps priority over the calendar for every product it covers.
+- **Fallbacks**: unconfirmed or rejected rows, rows without months, unmapped products and an empty calendar all keep
+  the regular reorder rule, and `outputs/harvest_plan.csv` says why. Harvest products are not reordered by the
+  regular rule, so if stock runs out before a harvest order lands the plan says a bridge order is needed (it is not
+  placed automatically).
+- **`outputs/harvest_plan.csv`**: one row per calendar row (and per commodity without one): harvest window,
+  order window and order-by date, arrival (105-130 days), cases to last until the next harvest, status
+  (`upcoming`, `ORDER NOW`, `window closed`, `no harvest data`), whether it is in the brand orders, source and reason.
+  Unconfirmed rows show what would be ordered. Without stock data the quantities are gross need and nothing is ordered.
+- **Demo**: `python run.py --generate --demo-harvest --today 2026-11-14` writes demo stock and sample owner answers
+  that confirm two cited calendar rows, so the harvest orders show up in the demo's brand orders
+  (`./dashboard.sh demo` or `.\dashboard.ps1 demo`).
+
 ## Real data (NetSuite exports)
 
 ```bash

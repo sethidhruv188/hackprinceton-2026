@@ -31,6 +31,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--source", choices=["real", "synthetic"], default="real")
 ap.add_argument("--generate", action="store_true",
                 help="write synthetic data first (implies --source synthetic); default folders data_demo/, outputs_demo/, models_demo/")
+ap.add_argument("--demo-harvest", action="store_true",
+                help="with --generate: also write demo stock and sample owner answers that confirm harvest calendar rows, "
+                     "so the demo shows harvest orders in the brand orders")
 ap.add_argument("--allow-overwrite-real-data", action="store_true",
                 help="let a synthetic run write into the real data/, outputs/ or models/ folders (refused otherwise)")
 ap.add_argument("--ingest", action="store_true", help="rebuild data/ from the .xlsx exports in --raw first")
@@ -60,6 +63,8 @@ ap.add_argument("--use-stock", action=argparse.BooleanOptionalAction, default=No
 ap.add_argument("--inventory", default="data/raw/Inventory/CurrentInventory.xlsx",
                 help="current-inventory export; rebuilt into data/stock.csv when present")
 a = ap.parse_args()
+if a.demo_harvest and not a.generate:
+    ap.error("--demo-harvest only works with --generate (it writes demo data)")
 if a.generate:
     a.source = "synthetic"
 defaults = DEMO_DIRS if a.source == "synthetic" else REAL_DIRS
@@ -102,7 +107,9 @@ def md(obj):
 
 # ---------- load and holds ----------
 if a.generate:
-    print("synthetic data ->", synthetic.generate(a.data, allow_real=a.allow_overwrite_real_data))
+    print("synthetic data ->", synthetic.generate(a.data, allow_real=a.allow_overwrite_real_data, write_stock=a.demo_harvest))
+    if a.demo_harvest:
+        print("demo owner answers ->", synthetic.write_demo_answers(a.data))
 ans = answers.load(a.data)           # the owner's answers (data/owner_answers.csv), applied in memory below
 if a.ingest and not a.generate:
     print("== Ingest ==")

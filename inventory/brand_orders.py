@@ -368,12 +368,13 @@ def build_with_stock(fc, products, brand_map, stock, today, holds=(), cover_mont
                 on_order_known=present["on_order"], cbm=cbm, stock_columns=present)
 
 
-def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, answers=None):
+def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, answers=None, harvest_calendar=None):
     """use_stock=None: use data/stock.csv when it exists (the default).
     answers: inventory.answers.Answers (default: read <data>/owner_answers.csv). Applied here: hold
     releases and confirmed gaps (current holds, written to outputs/holds_now.csv), discontinued products,
     and, against stock, disputed stock counts, case sizes, container limits, harvest rules and the
-    on-order / units warnings."""
+    on-order / units warnings. Harvest buys: inventory/harvest.py (outputs/harvest_plan.csv);
+    harvest_calendar: path of the harvest calendar (default config/harvest_calendar.csv)."""
     from . import answers as A
     from .gaps import detect_unflagged_gaps
     data, out = Path(data), Path(out)
@@ -397,7 +398,12 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, 
         raise FileNotFoundError(f"--use-stock given but {sp} does not exist")
     today = pd.Timestamp(today) if today else pd.Timestamp.today().normalize()
     summ = B.summary(bm, panel, products, set(plan["product_id"]))
+    from . import harvest as H
+    hv = H.prepare(products, ans, today, calendar=H.load_calendar(harvest_calendar) if harvest_calendar else None)
+    fc_all = pd.read_csv(out / "forecast.csv", dtype={"product_id": str}) if (out / "forecast.csv").exists() else None
     if not use_stock:
+        if fc_all is not None:
+            H.write(hv, H.plan(hv, fc_all[~fc_all["product_id"].isin(gone)], products, None, today, holds, panel), out)
         ans.skip(["cbm", "container", "harvest", "stock", "units", "invcode"],
                  "only used when ordering against stock (data/stock.csv)")
         orders, lines = build(plan, bm, today, cover_months, holds, B.brand_info(data / "raw" / "brands.csv"))
@@ -409,14 +415,14 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, 
         return orders, lines
     from . import stock_plan as SP
     stock, count_notes = A.apply_stock_counts(pd.read_csv(sp, dtype={"product_id": str}), ans)
-    fc = pd.read_csv(out / "forecast.csv", dtype={"product_id": str})
-    fc = fc[~fc["product_id"].isin(gone)]
+    fc = fc_all[~fc_all["product_id"].isin(gone)]
     case_cbm = data / "raw" / "case_cbm.csv"
     cbm = SP.cbm_table(products, SP.stock_frame(stock)[0], overrides_path=case_cbm, answers=A.cbm_overrides(ans, case_cbm))
     on_order, extra = A.stock_warnings(ans)
     r = build_with_stock(fc, products, bm, stock, today, holds, cover_months, cbm=cbm,
-                         cfg=A.container_config(SP.containers_config(), ans), harvest_rules=A.harvest_rules(SP.harvest_rules(), ans),
+                         cfg=A.container_config(SP.containers_config(), ans), harvest_rules=hv.rules,
                          on_order_answer=on_order, extra_warning=extra)
+    H.write(hv, H.plan(hv, fc, products, stock, today, holds, panel), out)
     if count_notes and len(r["lines"]):
         add = r["lines"]["product_id"].map(count_notes)
         r["lines"]["note"] = [("; ".join(x for x in (n, a) if isinstance(x, str) and x) if isinstance(a, str) else n)

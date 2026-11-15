@@ -1,6 +1,6 @@
 # Start the local ordering dashboard on Windows (PowerShell): API on 127.0.0.1:8765, web app on http://127.0.0.1:5173
 #   .\dashboard.ps1          real data (data\, outputs\ from `python run.py`)
-#   .\dashboard.ps1 demo     synthetic demo (data_demo\, outputs_demo\ from `python run.py --generate --today 2026-11-14`)
+#   .\dashboard.ps1 demo     synthetic demo (data_demo\, outputs_demo\ from `python run.py --generate --demo-harvest --today 2026-11-14`)
 # Same behaviour as dashboard.sh. Everything stays on this computer: both servers listen on 127.0.0.1 only.
 # If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\dashboard.ps1
 param([string]$Mode = "")

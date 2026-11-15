@@ -18,6 +18,7 @@ def test_released_hold_is_no_longer_a_hold(demo_run, tmp_path, monkeypatch):
     for k in ("data", "out", "models"):                                   # a private copy: other tests keep theirs
         shutil.copytree(demo_run[k], tmp_path / k)
     data, out, models = tmp_path / "data", tmp_path / "out", tmp_path / "models"
+    (data / "owner_answers.csv").unlink(missing_ok=True)         # other tests answer in the shared demo folder
     monkeypatch.setenv("DASH_DATA", str(data))
     monkeypatch.setenv("DASH_OUT", str(out))
     monkeypatch.setenv("DASH_TODAY", "2026-11-14")

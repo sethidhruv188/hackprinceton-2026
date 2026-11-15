@@ -2,7 +2,7 @@
 # Start the local ordering dashboard: API on 127.0.0.1:8765, web app on http://127.0.0.1:5173
 #   ./dashboard.sh          real data (data/, outputs/ from `python run.py`)
 #   ./dashboard.sh demo     synthetic demo (data_demo/, outputs_demo/ from
-#                           `python run.py --generate --data data_demo --out outputs_demo --models models_demo`)
+#                           `python run.py --generate --demo-harvest --today 2026-11-14`)
 # Everything stays on this computer: both servers listen on 127.0.0.1 only.
 set -euo pipefail
 cd "$(dirname "$0")"

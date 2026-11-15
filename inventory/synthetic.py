@@ -88,6 +88,18 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
             expiry = (months[-1] + pd.DateOffset(months=1) + pd.Timedelta(days=int(rng.uniform(10, shelf)))).date()
             stock.append(dict(product_id=p, on_hand_units=0 if held else on_hand, held_units=held,
                               earliest_expiry=str(expiry)))
+    # Harvest-commodity demo products (dals, rice, nuts), with item-code prefixes like the real data so the
+    # commodity map applies. Own random stream, so the products above are unchanged.
+    hr = np.random.default_rng(seed + 1)
+    for pid_, name, cat, base in HARVEST_DEMO:
+        products.append(dict(product_id=pid_, name=name, category=cat, shelf_life_days=365, lead_time_days=130,
+                             unit_cost=round(float(hr.uniform(0.8, 6.0)), 2), primary_source="Country A", backup_source="Country B"))
+        for m in months:
+            lam = base * (1.25 if m in diwali else 1.0)
+            rows.append(dict(product_id=pid_, month=m.strftime("%Y-%m"), units_sold=int(hr.poisson(lam * hr.gamma(8, 1 / 8))),
+                             status="sellable"))
+        stock.append(dict(product_id=pid_, on_hand_units=int(base * hr.uniform(2.0, 5.0)), held_units=0,
+                          earliest_expiry=str((months[-1] + pd.DateOffset(months=10)).date())))
     out = Path(out_dir)
     out.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(out / "sales.csv", index=False)
@@ -95,3 +107,35 @@ def generate(out_dir="data_demo", seed=42, write_stock=False, allow_real=False):
     if write_stock:
         pd.DataFrame(stock).to_csv(out / "stock.csv", index=False)
     return out
+
+
+# (product_id, name, category, typical cases a month): real-looking names so config/commodity_map.csv maps them
+HARVEST_DEMO = [
+    ("AD201", "Sunrise Toor Dal 4 lb X 10", "lentils_beans", 60.0),
+    ("AD202", "Sunrise Moong Dal 4 lb X 10", "lentils_beans", 35.0),
+    ("BD301", "Chana Dal 55 Lb X", "lentils_beans", 25.0),
+    ("AD299", "Sunrise Panchratna Dal 2 lb X 20", "lentils_beans", 8.0),           # mixed pack: asked to the owner
+    ("AN401", "Lotus Almond 14 oz X 20", "nuts_dry_fruits", 40.0),
+    ("AN402", "Lotus Cashew Whole 14 oz X 20", "nuts_dry_fruits", 30.0),
+    ("AN403", "Lotus Green Raisin 14 oz X 20", "nuts_dry_fruits", 20.0),
+    ("AN499", "Lotus Alo Bukhara 14 oz X 20", "nuts_dry_fruits", 6.0),             # no commodity keyword: asked
+    ("AR501", "Peacock Basmati Rice 10 lb X 4", "rice_flour", 50.0),                # owner's rice rule (config/harvest.csv)
+    ("AR502", "Peacock Idli Rice 20 lb X 2", "rice_flour", 15.0),                   # not in the rice rule: calendar
+]
+
+# Sample owner answers for the demo: confirm cited harvest calendar rows (rule_id = commodity_country), so the
+# demo shows the loop: cited calendar row -> owner confirms -> harvest order in the brand orders.
+DEMO_ANSWERS = [
+    ("harvest:toor_india", "yes", "confirmed on the dashboard (demo)"),
+    ("harvest:almond_usa", "yes", "confirmed on the dashboard (demo)"),
+]
+
+
+def write_demo_answers(out_dir, timestamp="2026-11-10T09:00:00+00:00"):
+    """Write the demo owner answers (owner_answers.csv format) into a DEMO data folder."""
+    out = Path(out_dir)
+    if out.resolve() == REAL_DATA_DIR:
+        raise ValueError("demo answers never go into the real data folder")
+    pd.DataFrame([dict(question_id=q, answer=a, note=n, timestamp=timestamp) for q, a, n in DEMO_ANSWERS],
+                 columns=["question_id", "answer", "note", "timestamp"]).to_csv(out / "owner_answers.csv", index=False)
+    return out / "owner_answers.csv"

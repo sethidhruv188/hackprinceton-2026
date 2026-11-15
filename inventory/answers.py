@@ -526,11 +526,55 @@ def parse_harvest(note):
     return (_months(o), _months(a)) if o and a else None
 
 
-def harvest_rules(rules, answers):
+_HARVEST = re.compile(r"\bharvest\w*\W+(?:is\W+|in\W+|from\W+|during\W+)*" + _SPEC, re.IGNORECASE)
+
+
+def parse_harvest_months(note):
+    """'harvest Oct-Dec' -> ('Oct', 'Dec'); 'harvest in March' -> ('Mar', 'Mar'); None if not stated."""
+    m = _HARVEST.search(str(note))
+    if not m:
+        return None
+    a = m.group(1)[:3].title()
+    return a, (m.group(2)[:3].title() if m.group(2) else a)
+
+
+def harvest_calendar(calendar, answers):
+    """harvest:<rule_id> answers for config/harvest_calendar.csv rows (rule_id = commodity_country).
+    yes: confirmed with the row's months, or the months in the note ("harvest Oct-Dec"), which win;
+    no: rejected (not bought by harvest from that country); not sure: no change.
+    Returns the calendar with `confirmed` (yes / no / rejected) and `month_source` columns."""
+    cal = calendar.copy()
+    cal["confirmed"] = cal["confirmed_by_owner"].astype(str).str.strip().str.lower().map({"yes": "yes"}).fillna("no")
+    cal["month_source"] = "calendar"
+    for _, r in answers.of("harvest").iterrows():
+        hit = cal["rule_id"] == r["key"]
+        if not hit.any():
+            continue                                   # a config/harvest.csv rule: harvest_rules() records it
+        if r["answer"] == "not sure":
+            answers.record(r, NO_CHANGE, "not sure: still unconfirmed; the regular rule applies")
+        elif r["answer"] == "no":
+            cal.loc[hit, "confirmed"] = "rejected"
+            answers.record(r, APPLIED, "not bought by harvest from this country: the regular rule applies")
+        else:
+            months = parse_harvest_months(r["note"])
+            if months:
+                cal.loc[hit, ["harvest_start_month", "harvest_end_month", "month_source"]] = [months[0], months[1], "owner answer"]
+            if not str(cal.loc[hit, "harvest_start_month"].iloc[0]).strip():
+                answers.record(r, NOT_UNDERSTOOD, "no harvest months known: add them in the note, e.g. 'harvest Oct-Dec'")
+                continue
+            cal.loc[hit, "confirmed"] = "yes"
+            s, e = cal.loc[hit, ["harvest_start_month", "harvest_end_month"]].iloc[0]
+            answers.record(r, APPLIED, f"harvest buy confirmed: harvest {s}-{e or s}" + (" (months from the note)" if months else ""))
+    return cal
+
+
+def harvest_rules(rules, answers, skip=()):
     """harvest:RULE answers -> rules with confirmed months, or the candidate removed. Rules already confirmed
-    in config/harvest.csv win."""
+    in config/harvest.csv win. skip: rule ids handled elsewhere (harvest calendar rows)."""
     rules = rules.copy()
     for _, r in answers.of("harvest").iterrows():
+        if r["key"] in set(skip):
+            continue
         hit = rules["rule_id"] == r["key"]
         if not hit.any():
             answers.record(r, NOT_FOUND, "no such rule in config/harvest.csv")
