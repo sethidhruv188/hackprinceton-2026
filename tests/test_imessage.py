@@ -86,7 +86,7 @@ def test_batches_per_space_into_one_turn_and_one_reply(tmp_path):
     assert calls == [dict(thread="spc_1", text="how many\nof moong dal", role="owner", channel="imessage"),
                      dict(thread="spc_2", text="hi", role="guest", channel="imessage")]
     replies = [s for s in bot.sender.sent if s["space"] == "spc_1"]
-    assert len(replies) == 1 and replies[0]["parent"] == "m2" and replies[0]["key"] == "reply:spc_1:m2:0"
+    assert len(replies) == 1 and replies[0]["parent"] is None and replies[0]["key"] == "reply:spc_1:m2:0"   # not threaded
     assert replies[0]["sender"] == AGENT_ID and bot.state.cursor == 3
     assert ("spc_1", True) in bot.sender.typing_calls and ("spc_1", False) in bot.sender.typing_calls
     assert State(tmp_path / "state").cursor == 3                                    # persisted
@@ -284,3 +284,20 @@ def test_digest_goes_only_to_owner_spaces_once_a_day(tmp_path):
     assert [m["space"] for m in s.sent] == ["spc_owner"] and s.sent[0]["key"] == "digest:spc_owner:2026-11-14:0"
     assert run(alerts.send_digest(cfg, s, State(cfg.state_dir), "2026-11-14", "again")) == []      # once a day, persisted
     assert run(alerts.send_digest(cfg, s, State(cfg.state_dir), "2026-11-15", "next day")) == ["spc_owner"]
+
+
+def test_photon_sender_sends_plain_messages(monkeypatch):
+    """The real sender leaves parentMessageId out (a normal message in the chat), and keeps the idempotency key."""
+    sent = []
+
+    class Projects:
+        async def send_message(self, inp):
+            sent.append(inp)
+
+    s = B.PhotonSender.__new__(B.PhotonSender)
+    s.cfg = C.Config(project_id="pho_prj_x")
+    s.client = type("Client", (), {"projects": Projects()})()
+    run(s.send_text("spc_1", AGENT_ID, None, "hello", "reply:spc_1:m1:0"))
+    body = sent[0].body.model_dump(exclude_none=True)
+    assert "parentMessageId" not in body and body["spaceId"] == "spc_1" and body["senderId"] == AGENT_ID
+    assert sent[0].headers.model_dump(by_alias=True)["idempotency-key"] == "reply:spc_1:m1:0"

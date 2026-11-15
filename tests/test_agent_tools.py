@@ -120,3 +120,23 @@ def test_guests_never_get_write_tools():
     names = {t.name for t in T.for_role(T.ALL_TOOLS, "guest")}
     assert not names & {t.name for t in T.WRITE_TOOLS} and "what_to_order" in names and "web_search" in names
     assert {t.name for t in T.for_role(T.ALL_TOOLS, "owner")} == {t.name for t in T.ALL_TOOLS}
+
+
+def test_explain_product_sizes_orders_by_the_owner_rule(demo_full):
+    for product in ("cashew", "moong dal", "toor dal"):
+        s = run("explain_product", {"product": product}, demo_full).lower()
+        assert "tops up" not in s and "order_up_to" not in s and "order-up-to" not in s and "order up to" not in s
+    cashew = run("explain_product", {"product": "cashew"}, demo_full)
+    assert "Order quantity:" in cashew and "owner's rule" in cashew and "In order Lotus|2026-11-14" in cashew
+    assert "No order needed now" in run("explain_product", {"product": "moong dal"}, demo_full)
+    toor = run("explain_product", {"product": "toor dal"}, demo_full)
+    assert "No order needed now" not in toor and "Harvest buy (toor_india)" in toor and "(105-130 days)" in toor
+
+
+def test_harvest_tool_gives_the_real_arrival_range(demo_full):
+    import re
+    s = run("harvest_plan", {"commodity": "moong"}, demo_full)
+    m = re.search(r"order between (\S+) and (\S+); arrives between (\S+) and (\S+) \(105-130 days\)", s)
+    assert m, s
+    start, by, early, late = (pd.Timestamp(x) for x in m.groups())
+    assert late == by + pd.Timedelta(days=130) and early == max(start, pd.Timestamp(TODAY)) + pd.Timedelta(days=105)

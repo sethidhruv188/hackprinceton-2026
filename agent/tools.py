@@ -159,11 +159,9 @@ def explain_product(product: str) -> str:
         out.append(f"Stock: {_num(st.get('on_hand_cases'))} cases on hand, 3-month floor {_num(st.get('floor_cases'))}, status: {st.get('status')}.")
     else:
         out.append("No stock data for this product (plan is gross need).")
+    out.extend(_order_lines(pid, p, st))
     if p.get("harvest"):
-        h = p["harvest"]
-        out.append(f"Harvest buy ({h.get('rule')}): order {h.get('order_from')} to {h.get('order_by')}, arrives {h.get('expected_arrival')}, {_num(h.get('order_cases'))} cases.")
-    if p.get("reorder"):
-        out.append(f"Reorder rule: {p['reorder'].get('reason', '')}")
+        out.append(_harvest_line(p["harvest"]))
     risk = _csv("sourcing_options.csv")
     if len(risk) and pid in set(risk["product_id"]):
         r = risk.set_index("product_id").loc[pid]
@@ -171,6 +169,50 @@ def explain_product(product: str) -> str:
     if p.get("inactive"):
         out.append("Not in the order plan (no sales in the last 6 months).")
     return _cap("\n".join(out))
+
+
+OWNER_RULE = "owner's rule: enough for 3 months after it arrives, minus the stock left then"
+
+
+def _order_lines(pid, p, st):
+    """When and how much, the way real orders are sized (the owner's rule). The simulation's order-up-to level is
+    never shown."""
+    out = []
+    lines = _csv("brand_order_lines.csv")
+    mine = lines[(lines["product_id"] == pid)] if len(lines) else lines
+    if len(mine):
+        for oid, g in mine.groupby("order_id", sort=False):
+            held = g["on_hold"].astype(str).str.lower().eq("true").any()
+            total = float(pd.to_numeric(g["cases"], errors="coerce").sum())
+            pulled = float(pd.to_numeric(g.loc[g.get("pulled_forward", pd.Series(False, index=g.index)).astype(str).str.lower().eq("true"), "cases"],
+                                         errors="coerce").sum()) if "pulled_forward" in g else 0.0
+            out.append(f"In order {oid}: " + ("on hold, not counted." if held else
+                       f"{_num(total)} cases" + (f" (incl. {_num(pulled)} pulled forward to fill the container)" if pulled else "") + "."))
+    if st and p.get("harvest"):
+        pass                                   # a harvest buy: ordered once a season (below), not by the reorder rule
+    elif st:
+        n = int(float(st.get("order_now_cases") or 0))
+        rp = _num(st.get("reorder_point"))
+        if n > 0:
+            out.append(f"Order quantity: {n} cases now ({OWNER_RULE}); it is below its reorder point of {rp} cases.")
+        elif st.get("ok_until"):
+            out.append(f"No order needed now: it reaches its reorder point ({rp} cases: 130 days of sales + 3 months) around {st['ok_until']}.")
+    elif p.get("plan"):
+        first = p["plan"][0]
+        out.append(f"Gross plan (no stock data): {_num(first.get('cases_needed'))} cases for {first.get('month')}, order by {first.get('order_by_safe')}.")
+    return out
+
+
+def _harvest_line(h):
+    """A harvest buy with the arrival range an order placed in its window really has (105-130 days)."""
+    hp = _csv("harvest_plan.csv")
+    row = hp[hp["rule_id"] == h.get("rule")] if len(hp) and "rule_id" in hp else hp
+    if len(row) and row.iloc[0].get("arrival_latest"):
+        r = row.iloc[0]
+        when = f"arrives between {r['arrival_earliest']} and {r['arrival_latest']} (105-130 days)"
+    else:
+        when = f"arrives in {pd.Timestamp(h.get('expected_arrival')):%b %Y} (owner's rule in config/harvest.csv)"
+    return f"Harvest buy ({h.get('rule')}): order {h.get('order_from')} to {h.get('order_by')}, {when}, {_num(h.get('order_cases'))} cases."
 
 
 @tool
@@ -216,8 +258,9 @@ def harvest_plan(commodity: str = "") -> str:
             out.append(f"- {r.commodity} / {r.source_country or '?'}: {r.status}; {r.reason}")
             continue
         bridge = f" BRIDGE ORDER NEEDED for {int(float(r.runs_out_before_arrival))} product(s)." if str(r.runs_out_before_arrival) not in ("", "0", "0.0") else ""
-        out.append(f"- {r.commodity} / {r.source_country}: harvest {r.harvest_window}; {r.status}; order by {r.order_by}; arrives about "
-                   f"{r.arrival_estimate}; {_num(r.quantity_cases)} cases until the next harvest; in orders: {r.in_orders} "
+        out.append(f"- {r.commodity} / {r.source_country}: harvest {r.harvest_window}; {r.status}; order between {r.order_window_start} "
+                   f"and {r.order_by}; arrives between {r.arrival_earliest} and {r.arrival_latest} (105-130 days); "
+                   f"{_num(r.quantity_cases)} cases until the next harvest; in orders: {r.in_orders} "
                    f"({r.rule_source}); source {r.source_url or 'none'} ({r.confidence or 'no'} confidence).{bridge}")
     if len(hp) > 8:
         out.append(f"...{len(hp) - 8} more rows.")

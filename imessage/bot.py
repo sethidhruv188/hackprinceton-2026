@@ -9,7 +9,8 @@ How it works:
   PHOTON_ALLOW_GUESTS=false). A batch with several senders counts as owner only if every sender is an owner.
 - Batching: per space, about 4 s after the last message, all pending texts go to the agent as one turn; one reply.
 - The typing indicator is on while the agent works; "Looking into that..." is sent only if it takes over ~8 s.
-- Long replies are split at sentence / line boundaries into at most 3 bubbles; markdown is stripped.
+- Long replies are split at sentence / line boundaries into at most 3 bubbles; markdown is stripped. Replies are
+  normal messages in the chat, not threaded replies to the owner's message.
 - Idempotency: one idempotency key per bubble; answered message ids are persisted; the cursor is a low-water mark:
   it only moves past an event once that event's batch is answered (or the event is skipped), so a crash or reconnect
   replays unanswered messages and skips answered ones. No message text is ever written by the bot.
@@ -70,11 +71,13 @@ class PhotonSender:
     async def send_text(self, space_id, sender_id, parent_id, text, key):
         from photon_api.generated.models import SendMessageRequest, SendTextContent
         from photon_api.rpc_generated import SendMessageHeader, SendMessageInput, SendMessagePath
+        body = dict(spaceId=space_id, senderId=sender_id, content=SendTextContent(type="text", format="plain", text=text))
+        if parent_id:                                     # threaded reply only when asked; the bot sends plain messages
+            body["parentMessageId"] = parent_id
         await self.client.projects.send_message(SendMessageInput(
             path=SendMessagePath(id=self.cfg.project_id),
             headers=SendMessageHeader.model_validate({"idempotency-key": key}),
-            body=SendMessageRequest(spaceId=space_id, senderId=sender_id, parentMessageId=parent_id,
-                                    content=SendTextContent(type="text", format="plain", text=text))))
+            body=SendMessageRequest(**body)))
 
     async def typing(self, space_id, sender_id, on):
         from photon_api.generated.models import SetSpaceTypingRequest
@@ -167,7 +170,7 @@ class Bot:
             try:
                 reply = await asyncio.wait_for(asyncio.shield(work), self.cfg.slow_notice_seconds)
             except asyncio.TimeoutError:
-                await self._send(space_id, agent_id, last.message_id, NOTICE, f"notice:{space_id}:{last.message_id}")
+                await self._send(space_id, agent_id, None, NOTICE, f"notice:{space_id}:{last.message_id}")
                 reply = await work
         except Exception as e:                                # the agent itself failed (e.g. no model settings)
             log.error("agent failed for space %s: %s", C.mask(space_id), type(e).__name__)
@@ -177,7 +180,7 @@ class Bot:
         bubbles = split_reply(reply, self.cfg.bubble_chars, self.cfg.max_bubbles)
         try:
             for i, part in enumerate(bubbles):
-                await self._send(space_id, agent_id, last.message_id, part, f"reply:{space_id}:{last.message_id}:{i}")
+                await self._send(space_id, agent_id, None, part, f"reply:{space_id}:{last.message_id}:{i}")
         except Exception as e:
             log.error("reply to space %s not sent (%s): left unanswered; it is replayed after a restart",
                       C.mask(space_id), type(e).__name__)

@@ -280,7 +280,8 @@ def products_at_risk(out_dir, today):
     ho = _csv(out_dir, "harvest_orders.csv")
     if len(ho):
         for r in ho[pd.to_numeric(ho["projected_stock_at_arrival"], errors="coerce") < 0].itertuples():
-            add(r.product_id, f"harvest buy: runs out before the harvest order lands ({r.expected_arrival}): bridge order needed")
+            add(r.product_id, f"harvest buy: runs out before the harvest order lands (arrives in {pd.Timestamp(r.expected_arrival):%b %Y}): "
+                              f"bridge order needed")
     orders = _csv(out_dir, "brand_orders.csv")
     if len(orders) and len(lines):
         late = set(orders.loc[orders["status"].str.startswith("Too late"), "order_id"])

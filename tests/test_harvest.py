@@ -253,3 +253,18 @@ def test_confirmed_harvest_row_reaches_brand_orders(demo_run, tmp_path):
     assert plan.at["toor_india", "in_orders"] == "yes" and plan.at["almond_usa", "in_orders"] == "yes"
     rep = pd.read_csv(out / "harvest_plan.csv")
     assert (rep["commodity"] == "idli_rice").any()                               # no calendar row: regular rule, says so
+
+
+def test_arrival_dates_follow_the_lead_time(tmp_path):
+    """arrival_latest = order-by + 130 days; arrival_earliest = (window start, or today if the window is open) + 105."""
+    a = answers(tmp_path, [("harvest:toor_india", "yes", "")])
+    prep = H.prepare(PRODUCTS, a, TODAY, cmap=H.load_map(), calendar=_normalize(pd.DataFrame(CAL).reindex(columns=H.CAL_COLUMNS).fillna("")))
+    plan = H.plan(prep, fc_for(["AD201", "AN401"]), PRODUCTS, None, TODAY)
+    rows = plan[plan["arrival_latest"].fillna("") != ""]
+    assert len(rows) >= 2 and "arrival_estimate" not in plan.columns
+    for r in rows.itertuples():
+        assert pd.Timestamp(r.arrival_latest) == pd.Timestamp(r.order_by) + pd.Timedelta(days=130)
+        start = max(pd.Timestamp(r.order_window_start), pd.Timestamp(TODAY))
+        assert pd.Timestamp(r.arrival_earliest) == start + pd.Timedelta(days=105)
+    toor = plan.set_index("rule_id").loc["toor_india"]                    # window open on Nov 14: counted from today
+    assert toor["status"] == "ORDER NOW" and toor["arrival_earliest"] == "2027-02-27" and "ordered today" in toor["reason"]

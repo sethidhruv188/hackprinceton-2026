@@ -48,7 +48,7 @@ MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "No
 CAL_COLUMNS = ["commodity", "source_country", "harvest_start_month", "harvest_end_month", "crops_per_year", "source_url",
                "confidence", "confirmed_by_owner", "order_months_before", "evidence_quote", "notes"]
 PLAN_COLUMNS = ["commodity", "group", "source_country", "rule_id", "products", "product_ids", "harvest_window",
-                "order_window_start", "order_by", "arrival_earliest", "arrival_estimate", "covers_until", "quantity_cases",
+                "order_window_start", "order_by", "arrival_earliest", "arrival_latest", "covers_until", "quantity_cases",
                 "projected_stock_at_arrival", "runs_out_before_arrival", "yearly_cases", "status", "in_orders",
                 "confirmed", "rule_source", "confidence", "source_url", "origin_hints", "reason"]
 # Origin words in item names: a starting guess for the source country, never a confirmation.
@@ -309,7 +309,6 @@ def plan(prep, fc, products, stock, today, holds=(), panel=None):
             qty = int(ho["order_cases"].sum()) if len(ho) else 0
             proj = float(ho["projected_stock_at_arrival"].sum()) if len(ho) else 0.0
             short = ho[ho["projected_stock_at_arrival"] < 0]["product_id"].tolist() if len(ho) else []
-            arrival = pd.Timestamp(ho["expected_arrival"].iloc[0]) if len(ho) else w["next_order_by"] + pd.Timedelta(days=LEAD_LATE)
             covers = ho["covers_until"].iloc[0] if len(ho) else ""
             active = bool(c["confirmed"] == "yes" and c["chosen"] and stock_known)
             if c["confirmed"] == "rejected":
@@ -324,11 +323,14 @@ def plan(prep, fc, products, stock, today, holds=(), panel=None):
                 src, tail = "calendar (confirmed)", "in the brand orders as a harvest buy"
             order_by = w["next_order_by"] if w["status"] != "ORDER NOW" else w["order_by"]
             window_start = w["next_window_start"] if w["status"] != "ORDER NOW" else w["window_start"]
+            earliest_order = max(window_start, today)          # the window may already be open: can't order in the past
             text = f"{commodity.replace('_', ' ')} harvest in {c['source_country']} is {base['harvest_window']}"
             if c.get("month_source") == "owner answer":
                 text += " (months from the owner's answer)"
             text += (f"; order by {order_by:%b %d, %Y} ({_months_before(c)} month(s) before the harvest) so it comes from "
-                     f"the new crop; arrives about {arrival:%b %Y} (lead time {LEAD_EARLY}-{LEAD_LATE} days)")
+                     f"the new crop; arrives between {earliest_order + pd.Timedelta(days=LEAD_EARLY):%b %d} (ordered "
+                     f"{'today' if earliest_order == today else 'at the window start'}, {LEAD_EARLY}-day shipping) and {order_by + pd.Timedelta(days=LEAD_LATE):%b %d, %Y} (ordered on the last "
+                     f"day, {LEAD_LATE} days)")
             if covers:
                 text += f"; covers demand until {pd.Timestamp(covers):%b %Y} plus the 3-month cushion"
             if w["status"] == "window closed":
@@ -341,8 +343,8 @@ def plan(prep, fc, products, stock, today, holds=(), panel=None):
             if not stock_known:
                 text += "; quantity is gross need (no stock data)"
             rows.append(dict(base, order_window_start=f"{window_start:%Y-%m-%d}", order_by=f"{order_by:%Y-%m-%d}",
-                             arrival_earliest=f"{window_start + pd.Timedelta(days=LEAD_EARLY):%Y-%m-%d}",
-                             arrival_estimate=f"{arrival:%Y-%m-%d}", covers_until=covers, quantity_cases=qty,
+                             arrival_earliest=f"{earliest_order + pd.Timedelta(days=LEAD_EARLY):%Y-%m-%d}",
+                             arrival_latest=f"{order_by + pd.Timedelta(days=LEAD_LATE):%Y-%m-%d}", covers_until=covers, quantity_cases=qty,
                              projected_stock_at_arrival=round(proj, 1) if stock_known else np.nan,
                              runs_out_before_arrival=len(short), status=w["status"], in_orders="yes" if active else "no",
                              rule_source=src, reason="; ".join(why + [text, tail])))
