@@ -362,6 +362,51 @@ In code: `agent.run.answer(thread_id, text, today=None, role="owner"|"guest", ch
 - **Credit**: the supplier_scout's research design is inspired by the open-source
   [harvey](https://github.com/ethanplusai/harvey) agent (AGPL-3.0); no code is taken from it, and nothing is ever sent.
 
+## iMessage (Photon 2.0)
+
+`imessage/bot.py` puts the agent on iMessage (`photon_echo.py` is kept as the fallback that only echoes).
+
+Set in `.env`: `PHOTON_API_KEY`, `PHOTON_PROJECT_ID`, `PHOTON_AGENT_HANDLE` (the number Photon gave the agent),
+`PHOTON_OWNER_NUMBERS` (owners, comma-separated, E.164 like `+15551234567`), optionally `PHOTON_ALLOW_GUESTS=false`,
+plus the agent's `OPENROUTER_API_KEY` / `LLM_MODEL`. `AGENT_DATA` / `AGENT_OUT` pick the folders (default `data`,
+`outputs`; use `data_demo` / `outputs_demo` for the demo).
+
+```powershell
+# PowerShell, from the repo folder
+python -m imessage.bot                                     # real data; Ctrl+C to stop
+$env:AGENT_DATA="data_demo"; $env:AGENT_OUT="outputs_demo"; python -m imessage.bot   # the demo
+python -m imessage.alerts                                  # print today's digest (sends nothing)
+python -m imessage.alerts --send                           # send it to owners who have texted, once a day
+```
+
+Then text the agent's number from your phone (on a shared line the human texts first).
+
+- **Roles**: owner numbers get the owner agent (answers, notes, memory); everyone else is a read-only guest, so judges
+  can text during the demo (`PHOTON_ALLOW_GUESTS=false` ignores them). A batch with several senders is owner only if
+  every sender is an owner.
+- **Batching**: per conversation, about 4 seconds after the last text, all pending texts go to the agent as one turn;
+  one reply. The typing indicator shows while it works; "Looking into that..." is sent only if it takes over 8 s.
+  Long replies are split into at most 3 plain-text bubbles.
+- **Owner questions by text**: "any questions for me?" makes the agent ask one pending question at a time and record
+  yes / no / not sure answers (owner only).
+- **Reliability**: the event payload is read directly; answered message ids are remembered; each bubble has its own
+  idempotency key; the cursor only moves past a message once it is answered, so a crash or reconnect replays
+  unanswered texts and skips answered ones. State lives in `imessage/state/` (gitignored).
+- **Privacy**: logs (`imessage/state/bot.log`) show phone numbers masked to the last 4 digits and never message text;
+  the bot stores no message text. Conversation history exists only in the agent's `data/agent_threads.sqlite`
+  (gitignored).
+- **Daily digest** (`imessage/alerts.py`): Order now / Too late: expedite / harvest windows opening within 30 days /
+  active country alerts, from the same data the agent's tools read (no model, exact numbers, no cost), sent only to
+  owner conversations that have texted the bot, at most once per day. Schedule it with Windows Task Scheduler:
+
+```powershell
+$repo = "C:\Users\<you>\Documents\hackprinceton-2026"
+$action = New-ScheduledTaskAction -Execute "python" -Argument "-m imessage.alerts --send" -WorkingDirectory $repo
+$trigger = New-ScheduledTaskTrigger -Daily -At 8am
+Register-ScheduledTask -TaskName "Shakti iMessage digest" -Action $action -Trigger $trigger
+# remove it: Unregister-ScheduledTask -TaskName "Shakti iMessage digest"
+```
+
 ## Real data (NetSuite exports)
 
 ```bash
@@ -448,4 +493,4 @@ aggregate to months first (or extend `schema.load` to weekly).
 
 ## Next
 
-Photon iMessage on top of `agent.run.answer()` (allowlisted owner numbers -> role owner); a chat panel on the dashboard.
+A chat panel on the dashboard (role owner, channel dashboard).

@@ -24,7 +24,11 @@ ROLE = {
 Memory: /memories/AGENTS.md is loaded into your instructions at the start. When the owner states a lasting preference
 or a confirmed fact ("remember...", "always...", "Diwali is our biggest season"), add one dated line to
 /memories/AGENTS.md with edit_file (or write_file if it doesn't exist yet), then confirm briefly. Store only what the
-owner said, never guesses, phone numbers or web content.""",
+owner said, never guesses, phone numbers or web content.
+Questions: when the owner asks for your questions ("any questions for me?"), call pending_questions and ask only the
+FIRST one, in plain words (don't show its id). When he answers yes, no or not sure (maybe with a note), call
+record_answer with that question's id from the pending_questions result, confirm in a few words, then ask the next
+one. Stop when he says stop or changes the subject.""",
     "guest": """You are talking to a guest, not the owner. You can look things up and explain, but you cannot change
 anything: no answers to questions, no notes, no memory, no leads or alerts. If asked to change or remember something,
 say politely that changes need the owner. Do not write to /memories/.""",

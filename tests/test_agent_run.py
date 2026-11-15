@@ -222,3 +222,30 @@ def test_same_model_across_answers_keeps_one_event_loop(copy_demo):
     replies = [R.answer(f"loop-{i}", "hi", today=TODAY, role="owner", data=copy_demo["data"], out=copy_demo["out"], model=m)
                for i in range(3)]
     assert replies == ["ok", "ok", "ok"]                                    # was: every other answer "Event loop is closed"
+
+
+def test_owner_questions_one_at_a_time(copy_demo):
+    """'any questions for me?' -> the first pending question; 'yes' -> record_answer with that question's id."""
+    import re as _re
+    asked = {}
+
+    def respond(messages, tools):
+        t = last_tool(messages)
+        h = humans(messages)
+        if t is not None and t.startswith("Saved:"):
+            return say("Saved. Next question...")
+        if t is not None:
+            qid = _re.search(r"\[([^\]]+)\]", t).group(1)
+            asked["id"] = qid
+            return say("First question: is stock already ordered or at sea missing from the plan?")
+        if h[-1].lower().startswith("any questions"):
+            return say("", call("pending_questions", limit=3))
+        earlier = [m.content for m in messages if getattr(m, "type", "") == "tool" and "open question" in str(m.content)]
+        qid = _re.search(r"\[([^\]]+)\]", earlier[-1]).group(1)
+        return say("", call("record_answer", question_id=qid, answer="yes", note="two containers at sea"))
+    assert "First question" in ask(copy_demo, "Any questions for me?", respond, thread="q1")[0]
+    assert ask(copy_demo, "yes, two containers at sea", respond, thread="q1")[0].startswith("Saved")
+    rows = pd.read_csv(copy_demo["data"] / "owner_answers.csv")
+    assert rows.iloc[-1]["question_id"] == asked["id"] and rows.iloc[-1]["answer"] == "yes"
+    p = prompts.main_prompt("owner", "imessage")
+    assert "ask only the\nFIRST one" in p and "record_answer with that question's id" in p
