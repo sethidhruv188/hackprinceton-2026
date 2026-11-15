@@ -13,6 +13,7 @@
 import asyncio
 import csv
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,29 @@ def _text(message):
     return str(c).strip()
 
 
+def _table_row(m):
+    return " - ".join(c.strip() for c in m.group(1).split("|") if c.strip())
+
+
+_MD = [(r"\*\*(.+?)\*\*", r"\1"), (r"__(.+?)__", r"\1"), (r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"\1"),
+       (r"`([^`]*)`", r"\1"), (r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\1 (\2)"), (r"(?m)^\s{0,3}#{1,6}\s+", ""),
+       (r"(?m)^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$\n?", ""), (r"(?m)^\s*\|(.*)\|\s*$", _table_row)]
+MARKDOWN = re.compile(r"\*\*|__|`|(?m:^\s{0,3}#{1,6}\s)|\[[^\]]+\]\(https?://|(?m:^\s*\|.*\|\s*$)")
+
+
+def has_markdown(text):
+    """Bold, code, headings, links or table rows (plain '- ' bullets are fine in a text message)."""
+    return bool(MARKDOWN.search(str(text)))
+
+
+def strip_markdown(text):
+    """Plain text for a text message: bold / italic / code / headings / links / tables become plain text."""
+    out = str(text)
+    for pat, rep in _MD:
+        out = re.sub(pat, rep, out)
+    return re.sub(r"\n{3,}", "\n\n", out).strip()
+
+
 def cap(text, channel):
     """Trim to the channel's hard cap at a sentence or line end."""
     limit = CAPS[channel]
@@ -118,25 +142,36 @@ async def _answer(model, thread_id, text, role, channel, data, wall_clock, callb
             result = await asyncio.wait_for(_run(agent, text, config), timeout=wall_clock)
         except GraphRecursionError as e:
             log(data, channel, thread_id, role, "limit:recursion", e)
-            return LIMIT_REPLY
+            return dict(raw=LIMIT_REPLY, reply=LIMIT_REPLY, error="limit:recursion")
         except LLMTimeout as e:
             log(data, channel, thread_id, role, "limit:llm_timeout", e)
-            return LIMIT_REPLY
+            return dict(raw=LIMIT_REPLY, reply=LIMIT_REPLY, error=f"limit:llm_timeout: {e}")
         except asyncio.TimeoutError:
             log(data, channel, thread_id, role, "limit:wall_clock", f"{wall_clock}s")
-            return LIMIT_REPLY
+            return dict(raw=LIMIT_REPLY, reply=LIMIT_REPLY, error=f"limit:wall_clock ({wall_clock}s)")
         except Exception as e:                  # anything else: honest reply, logged
             log(data, channel, thread_id, role, "error", f"{type(e).__name__}: {e}")
-            return ERROR_REPLY
+            return dict(raw=ERROR_REPLY, reply=ERROR_REPLY, error=f"{type(e).__name__}: {str(e)[:300]}")
     msgs = [m for m in result["messages"] if getattr(m, "type", "") == "ai" and _text(m)]
-    reply = _text(msgs[-1]) if msgs else ""
-    return cap(reply or "I don't have an answer for that.", channel)
+    raw = (_text(msgs[-1]) if msgs else "") or "I don't have an answer for that."
+    return dict(raw=raw, reply=finish(raw, channel))
 
 
-def answer(thread_id, text, today=None, role="guest", channel="imessage", data=None, out=None, model=None,
-           wall_clock=WALL_CLOCK_S, callbacks=None):
+def finish(raw, channel):
+    """What is sent: plain text on iMessage (markdown stripped), capped per channel."""
+    return cap(strip_markdown(raw) if channel == "imessage" else raw, channel)
+
+
+def answer(thread_id, text, **kw):
     """Answer one message in a conversation. role: "owner" (allowlisted iMessage numbers, the dashboard) or "guest";
-    channel: "imessage" or "dashboard". today: the plan date (time travel); default today."""
+    channel: "imessage" or "dashboard". today: the plan date (time travel); default today. Returns the reply text."""
+    return answer_detail(thread_id, text, **kw)["reply"]
+
+
+def answer_detail(thread_id, text, today=None, role="guest", channel="imessage", data=None, out=None, model=None,
+                  wall_clock=WALL_CLOCK_S, callbacks=None):
+    """Like answer(), returning dict(reply, raw, error?): raw is the model's own text before markdown stripping and
+    the length cap (the evals check its format)."""
     d0, o0 = default_dirs()
     data, out = data or d0, out or o0
     with _LOCK, context.use(data, out, today, role=role, channel=channel) as ctx:

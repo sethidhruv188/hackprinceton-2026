@@ -48,8 +48,35 @@ def test_good_model_passes_all_cases(copy_demo):
     assert len(res) == 12
     failed = res[~(res["tool_ok"] & res["args_ok"] & res["numbers_ok"])]
     assert failed.empty, failed[["id", "tools", "invented", "reply"]].to_string()
-    assert E.summary(res).startswith("12 cases: right tool 12/12, right arguments 12/12, no invented numbers 12/12")
+    assert E.summary(res).startswith("12 cases: right tool 12/12, right arguments 12/12, no invented numbers 12/12, format 12/12")
+    assert (res["error"] == "").all() and (res["llm_calls"] > 0).all() and "seconds" in res
     assert not (copy_demo["data"] / "agent_memory").exists()          # evals ran on a scratch copy
+
+
+def test_list_numbering_is_not_a_number():
+    assert E.invented("1. Containers: 80 CBM\n2. Case size?\n#3 Lotus", ["80 CBM"]) == []
+
+
+def markdown_model(messages, tools):
+    if getattr(messages[-1], "type", "") == "tool":
+        return say("**Order now**: " + messages[-1].content.splitlines()[0][:100])
+    return good(messages, tools)
+
+
+def test_format_column_and_errors(copy_demo):
+    res = E.run_evals(model=ScriptedModel(respond=markdown_model), cases=E.CASES[1:2], data=copy_demo["data"], out=copy_demo["out"])
+    assert not res["format_ok"].iloc[0] and "**" not in res["reply"].iloc[0]          # sent stripped, scored on the raw
+    def boom(messages, tools):
+        raise RuntimeError("Error code: 429 - rate limited upstream")
+    res = E.run_evals(model=ScriptedModel(respond=boom), cases=E.CASES[:1], data=copy_demo["data"], out=copy_demo["out"],
+                      report=copy_demo["out"] / "ev.csv", price=(1e-6, 2e-6), budget=0.0)
+    assert "429" in res["error"].iloc[0] and (copy_demo["out"] / "ev_log.csv").exists()
+
+
+def test_budget_stops_remaining_cases(copy_demo):
+    res = E.run_evals(model=ScriptedModel(respond=good), cases=E.CASES[:3], data=copy_demo["data"], out=copy_demo["out"],
+                      price=(1.0, 1.0), budget=0.5)                                     # absurd price: over budget after one case
+    assert list(res["skipped"]) == [False, True, True] and "skipped" in E.summary(res)
 
 
 def test_invented_numbers_are_caught(copy_demo):

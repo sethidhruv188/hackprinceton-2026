@@ -54,4 +54,8 @@ class ScriptedModel(BaseChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.seen.append(list(messages))
         msg = self.respond(messages, self.bound)
+        if getattr(msg, "usage_metadata", None) is None:          # rough token counts, like a real provider reports
+            tin = sum(len(str(m.content)) for m in messages) // 4 + 1
+            tout = len(str(msg.content)) // 4 + 1
+            msg.usage_metadata = {"input_tokens": tin, "output_tokens": tout, "total_tokens": tin + tout}
         return ChatResult(generations=[ChatGeneration(message=msg)])
