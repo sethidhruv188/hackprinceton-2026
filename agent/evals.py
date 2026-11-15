@@ -63,14 +63,22 @@ NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 ENUMERATOR = re.compile(r"(?m)^\s*(?:\d{1,2}[.)]|#\d{1,2})\s+")
 
 
+def _norm(n):
+    n = n.replace(",", "").rstrip(".")
+    whole, _, frac = n.partition(".")
+    whole = whole.lstrip("0") or "0"                  # "05" (from 2026-12-05) == "5" (from "Dec 5")
+    frac = frac.rstrip("0")
+    return f"{whole}.{frac}" if frac else whole
+
+
 def numbers(text):
-    return {n.replace(",", "").rstrip(".") for n in NUM.findall(ENUMERATOR.sub(" ", str(text)))}
+    return {_norm(n) for n in NUM.findall(ENUMERATOR.sub(" ", str(text)))}
 
 
 def invented(reply, evidence):
     """Numbers in the reply that appear in no tool output and no question (commas and list numbering ignored)."""
     pool = re.sub(r"(?<=\d),(?=\d)", "", " ".join(evidence))
-    have = numbers(pool) | {n.replace(",", "") for n in NUM.findall(pool)}
+    have = numbers(pool) | {_norm(n) for n in re.split(r"[-/]", " ".join(NUM.findall(pool))) if n}
     return sorted(n for n in numbers(reply) if n not in have and n.split(".")[0] not in have)
 
 

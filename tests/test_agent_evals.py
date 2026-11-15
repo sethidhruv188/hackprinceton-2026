@@ -83,3 +83,8 @@ def test_invented_numbers_are_caught(copy_demo):
     res = E.run_evals(model=ScriptedModel(respond=bad), cases=E.CASES[:3], data=copy_demo["data"], out=copy_demo["out"])
     assert res["tool_ok"].all() and not res["numbers_ok"].any()
     assert all("98765" in i for i in res["invented"])
+
+
+def test_dates_in_words_match_iso_dates_but_sums_are_flagged():
+    assert E.invented("runs out around Dec 5, 2026; Diwali Nov 8", ["run-out 2026-12-05; Diwali 2026 (2026-11-08)"]) == []
+    assert E.invented("559 cases in total", ["457 cases; 102 cases"]) == ["559"]       # a sum is not in any tool output
