@@ -1,6 +1,7 @@
 """Entry point: answer(thread_id, text, today=None, role=..., channel=...) -> str.
 
-- One conversation per (channel, thread_id), kept by an async SQLite checkpointer in <data>/agent_threads.sqlite
+- One conversation per (channel, thread_id), except owners: one thread per owner shared by iMessage and the
+  dashboard (agent/threads.py). Kept by an async SQLite checkpointer in <data>/agent_threads.sqlite
   (gitignored with the data folder), so history survives restarts.
 - Memory: /memories/ is a folder on disk, <data>/agent_memory/ (gitignored); /memories/AGENTS.md (owner preferences
   and confirmed context) is loaded into every conversation. Other paths are per-conversation scratch space.
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
-from agent import context, prompts, subagents
+from agent import context, prompts, subagents, threads
 from agent import tools as T
 
 RECURSION_LIMIT = 25
@@ -70,7 +71,8 @@ def build_agent(model, role, channel, data, checkpointer=None):
     backend = CompositeBackend(default=StateBackend(),
                                routes={"/memories/": FilesystemBackend(root_dir=memory_dir(data), virtual_mode=True)})
     permissions = [] if role == "owner" else [FilesystemPermission(operations=["write"], paths=["/memories/**"], mode="deny")]
-    main_tools = T.for_role(T.READ_TOOLS + [T.record_answer, T.log_event, T.log_override], role)
+    main_tools = T.for_role(T.READ_TOOLS + [T.record_answer, T.log_event, T.log_override, T.propose_adjustment,
+                                             T.confirm_adjustment, T.cancel_adjustment], role)
     return create_deep_agent(model=model, tools=main_tools, system_prompt=prompts.main_prompt(role, channel),
                              subagents=subagents.build(role), backend=backend, memory=[f"/memories/{MEMORY_FILE}"],
                              permissions=permissions, checkpointer=checkpointer, name="shakti_agent")
@@ -133,7 +135,7 @@ async def _run(agent, text, config):
 async def _answer(model, thread_id, text, role, channel, data, wall_clock, callbacks):
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from langgraph.errors import GraphRecursionError
-    config = {"configurable": {"thread_id": f"{channel}:{thread_id}"}, "recursion_limit": RECURSION_LIMIT}
+    config = {"configurable": {"thread_id": threads.checkpoint_key(thread_id, channel)}, "recursion_limit": RECURSION_LIMIT}
     if callbacks:
         config["callbacks"] = callbacks
     async with AsyncSqliteSaver.from_conn_string(str(Path(data) / "agent_threads.sqlite")) as saver:
@@ -219,7 +221,11 @@ def answer_detail(thread_id, text, today=None, role="guest", channel="imessage",
         async def job():
             context._CTX.set(ctx)                 # the loop thread doesn't inherit the caller's context
             return await _answer(model, str(thread_id), text, ctx.role, ctx.channel, ctx.data, wall_clock, callbacks)
-        return asyncio.run_coroutine_threadsafe(job(), _agent_loop()).result()
+        r = asyncio.run_coroutine_threadsafe(job(), _agent_loop()).result()
+        if ctx.role == "owner":                   # owner threads: keep a labeled transcript for the Ask page
+            threads.append(ctx.data, thread_id, ctx.channel, "owner", text)
+            threads.append(ctx.data, thread_id, ctx.channel, "agent", r["reply"])
+        return r
 
 
 _LOOP = None

@@ -21,6 +21,7 @@ import logging
 import re
 
 from agent.run import strip_markdown
+from agent.threads import owner_thread
 from imessage import config as C
 from imessage.parse import parse
 from imessage.state import State
@@ -164,7 +165,9 @@ class Bot:
         text = "\n".join(m.text for m in msgs)
         seqs = [m.seq for m in msgs]
         await self._typing(space_id, agent_id, True)
-        work = asyncio.ensure_future(asyncio.to_thread(self.agent, space_id, text, role, "imessage", self.cfg.data, self.cfg.out))
+        # Owners share one conversation with the dashboard (agent/threads.py); guests keep one per chat.
+        thread = owner_thread(last.sender) if role == "owner" else space_id
+        work = asyncio.ensure_future(asyncio.to_thread(self.agent, thread, text, role, "imessage", self.cfg.data, self.cfg.out))
         t0 = asyncio.get_running_loop().time()
         try:
             try:

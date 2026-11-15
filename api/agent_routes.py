@@ -326,6 +326,18 @@ def activity(limit: int = 200):
     for r in _read(d / "agent_overrides.csv").to_dict("records"):
         ev.append(dict(at=r.get("logged_at"), source="agent", channel="", role="owner", what="Recorded a quantity change",
                        detail=f"{r.get('product')}: {r.get('qty')} cases"))
+    from inventory import adjustments as ADJ
+    adj = ADJ.with_state(ADJ.load(d), M.today())
+    for r in adj.to_dict("records"):
+        what = f"{r['scope']} '{r['target']}': {ADJ.label(r)}"
+        ev.append(dict(at=r.get("created_at"), source="owner", channel=r.get("channel", ""), role="owner",
+                       what="Adjustment proposed", detail=what))
+        if r.get("confirmed_at"):
+            ev.append(dict(at=r["confirmed_at"], source="owner", channel="", role="owner",
+                           what="Adjustment confirmed", detail=f"{r['adj_id']}: {what} (now {r['state']})"))
+        if r.get("cancelled_at"):
+            ev.append(dict(at=r["cancelled_at"], source="owner", channel="", role="owner",
+                           what="Adjustment cancelled", detail=f"{r['adj_id']}: {what}"))
     for r in _read(d / "supplier_leads.csv").to_dict("records"):
         ev.append(dict(at=r.get("found_on"), source="research", channel="", role="", what="Supplier lead recorded",
                        detail=f"{r.get('company')} ({r.get('country')}): {r.get('commodities', '').replace(';', ', ')}",
@@ -339,7 +351,11 @@ def activity(limit: int = 200):
     counts = {}
     for _, e in timed:
         counts[e["what"]] = counts.get(e["what"], 0) + 1
-    return M.clean(dict(events=[e for _, e in timed[:max(1, min(limit, 1000))]], total=len(timed), counts=counts))
+    adjustments = [dict(adj_id=r["adj_id"], scope=r["scope"], target=r["target"], months=r["months"].split(";"),
+                        label=ADJ.label(r), reason=r["reason"], state=r["state"], channel=r["channel"])
+                   for r in adj.to_dict("records")][::-1]
+    return M.clean(dict(events=[e for _, e in timed[:max(1, min(limit, 1000))]], total=len(timed), counts=counts,
+                        adjustments=adjustments))
 
 
 # ---------------------------------------------------------------- ask the agent
@@ -386,6 +402,16 @@ def get_ask_status():
     return dict(**ask_status(), research=research_status())
 
 
+@router.get("/api/ask/history")
+def ask_history(limit: int = 50):
+    """Recent messages of the owner's conversation from both channels (iMessage and dashboard), oldest first, each with
+    its channel. Only the owner's own thread; guests' chats are never shown here."""
+    from agent.threads import owner_thread, recent
+    _env()
+    M = _M()
+    return dict(messages=recent(M.data_dir(), owner_thread(), max(1, min(limit, 200))))
+
+
 @router.post("/api/ask")
 def ask(q: AskIn):
     """One message to the agent as the owner on the dashboard channel, in the current mode and plan date."""
@@ -394,7 +420,8 @@ def ask(q: AskIn):
         raise HTTPException(422, "empty message")
     if len(text) > 2000:
         raise HTTPException(422, "message too long (2,000 characters at most)")
-    thread = "".join(ch for ch in q.thread_id if ch.isalnum() or ch in "-_")[:64] or "dashboard"
+    from agent.threads import owner_thread
+    thread = owner_thread()                 # the dashboard is the owner: one conversation shared with iMessage
     st = ask_status()
     if not st["available"]:
         raise HTTPException(503, st["reason"])

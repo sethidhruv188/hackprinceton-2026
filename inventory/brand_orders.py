@@ -401,12 +401,35 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, 
     from . import harvest as H
     hv = H.prepare(products, ans, today, calendar=H.load_calendar(harvest_calendar) if harvest_calendar else None)
     fc_all = pd.read_csv(out / "forecast.csv", dtype={"product_id": str}) if (out / "forecast.csv").exists() else None
+    # Owner-taught adjustments (inventory/adjustments.py): confirmed, not yet expired. Applied to the forecast and the
+    # gross plan just before quantities are computed; forecast.csv and the model stay unchanged.
+    from . import adjustments as ADJ
+    adj = ADJ.active(data, today)
+    adj_notes = {}
+    if len(adj):
+        cmap = hv.mapped[["product_id", "commodity"]] if "commodity" in hv.mapped else None
+        if fc_all is not None:
+            fc_all, adj_notes, rep = ADJ.apply(fc_all, adj, products, bm, cmap)
+        else:
+            rep = pd.DataFrame()
+        plan, plan_notes, rep_p = ADJ.apply(plan, adj, products, bm, cmap, value_col="cases_needed", extra_cols=("kg_needed",))
+        adj_notes = {**plan_notes, **adj_notes}
+        (rep if len(rep) else rep_p).to_csv(out / "adjustments_applied.csv", index=False)
+    else:
+        (out / "adjustments_applied.csv").unlink(missing_ok=True)
+
+    def _note(lines):
+        """Every order line of an adjusted product shows the owner's reason (column owner_adjustment)."""
+        if adj_notes and len(lines):
+            lines["owner_adjustment"] = lines["product_id"].astype(str).map(adj_notes).fillna("")
+        return lines
     if not use_stock:
         if fc_all is not None:
             H.write(hv, H.plan(hv, fc_all[~fc_all["product_id"].isin(gone)], products, None, today, holds, panel), out)
         ans.skip(["cbm", "container", "harvest", "stock", "units", "invcode"],
                  "only used when ordering against stock (data/stock.csv)")
         orders, lines = build(plan, bm, today, cover_months, holds, B.brand_info(data / "raw" / "brands.csv"))
+        lines = _note(lines)
         summ.to_csv(out / "brands.csv", index=False)
         orders.to_csv(out / "brand_orders.csv", index=False)
         lines.to_csv(out / "brand_order_lines.csv", index=False)
@@ -438,7 +461,7 @@ def run(data="data", out="outputs", today=None, cover_months=2, use_stock=None, 
     o = r["orders"].merge(agg["months_of_cover"].reset_index(), on="brand", how="left", suffixes=("_drop", ""))
     o = o.drop(columns=[c for c in o.columns if c.endswith("_drop")])
     o.to_csv(out / "brand_orders.csv", index=False)
-    r["lines"].to_csv(out / "brand_order_lines.csv", index=False)
+    _note(r["lines"]).to_csv(out / "brand_order_lines.csv", index=False)
     r["status"].assign(brand=r["status"]["product_id"].map(bm.set_index("product_id")["brand"])).to_csv(out / "product_status.csv", index=False)
     r["projection"].to_csv(out / "stock_projection.csv", index=False)
     r["harvest"].to_csv(out / "harvest_orders.csv", index=False)

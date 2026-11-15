@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from agent.threads import owner_thread
 from imessage import alerts, bot as B, config as C
 from imessage.parse import parse
 from imessage.state import State
@@ -83,8 +84,9 @@ def test_batches_per_space_into_one_turn_and_one_reply(tmp_path):
         await bot.drain()
     run(go())
     calls = sorted(bot.agent.calls, key=lambda c: c["thread"])
-    assert calls == [dict(thread="spc_1", text="how many\nof moong dal", role="owner", channel="imessage"),
-                     dict(thread="spc_2", text="hi", role="guest", channel="imessage")]
+    calls = sorted(bot.agent.calls, key=lambda c: c["role"])      # owners use their shared thread (agent/threads.py)
+    assert calls == [dict(thread="spc_2", text="hi", role="guest", channel="imessage"),
+                     dict(thread=owner_thread(OWNER), text="how many\nof moong dal", role="owner", channel="imessage")]
     replies = [s for s in bot.sender.sent if s["space"] == "spc_1"]
     assert len(replies) == 1 and replies[0]["parent"] is None and replies[0]["key"] == "reply:spc_1:m2:0"   # not threaded
     assert replies[0]["sender"] == AGENT_ID and bot.state.cursor == 3

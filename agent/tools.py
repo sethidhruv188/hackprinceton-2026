@@ -1,7 +1,9 @@
 """Tools for the agent: thin wrappers over what already exists. They read run.py's outputs and the dashboard API
 functions (so question ids and answer format match the dashboard), pass the plan date through, and return compact
-text. No tool runs run.py, ingest or training, or rewrites outputs / config. Write tools (record_answer, log_event,
-log_override, add_leads, add_alerts) work for the owner only.
+text. No tool runs run.py, ingest or training, or rewrites config. The one exception for outputs: confirming or
+cancelling an owner adjustment rebuilds the brand orders from the existing forecast (brand_orders.run, seconds).
+Write tools (record_answer, log_event, log_override, add_leads, add_alerts, the adjustment tools) work for the owner
+only.
 """
 import csv
 import json
@@ -440,6 +442,102 @@ def log_override(product: str, qty: float, reason: str) -> str:
             f"use this quantity when you order.")
 
 
+# ------------------------------------------------------------------ owner-taught adjustments (inventory/adjustments.py)
+def _adj_lookups():
+    """(products, brand map, commodity map) for resolving an adjustment's scope, from the current data folder."""
+    from inventory import answers as A
+    from inventory import brands as B
+    from inventory import harvest as H
+    from inventory.brand_orders import load
+    c = current()
+    _, products, _ = load(c.data)
+    bm = B.assign(products, c.data / "raw" / "brand_overrides.csv")
+    hv = H.prepare(products, A.load(c.data), c.today)
+    return products, bm, hv.mapped[["product_id", "commodity"]]
+
+
+def _replan():
+    """Rebuild the brand orders from the existing forecast (seconds, no retraining) so the change shows at once."""
+    from inventory import brand_orders, policy
+    c = current()
+    try:
+        brand_orders.run(c.data, c.out, c.today, int(policy.COVER_MONTHS))
+        return "The plan is updated."
+    except Exception as e:                        # the adjustment stays saved; the next full run applies it
+        return f"Saved, but the plan could not be rebuilt now ({type(e).__name__}); it applies on the next run."
+
+
+@tool
+def propose_adjustment(scope: str, target: str, months: str, effect: str, reason: str) -> str:
+    """Turn what the owner said about future demand into a structured adjustment and read it back. It is NOT applied
+    until the owner confirms (then call confirm_adjustment with the id).
+    scope: product, brand or commodity. target: the product name or item code, brand name, or commodity (moong, toor).
+    months: 'Dec', 'Dec-Jan', '2026-12' or '2026-12..2027-02'. effect: '+30%', '-20%' or '+50 cases' (cases per
+    month, split across the scope's products). reason: a few words, e.g. 'promo'."""
+    c = current()
+    if not c.is_owner:
+        return OWNER_ONLY
+    from inventory import adjustments as ADJ
+    products, bm, cmap = _adj_lookups()
+    try:
+        r = ADJ.propose(c.data, scope, target, months, effect, reason, c.today, products, bm, cmap, channel=c.channel)
+    except ValueError as e:
+        return f"Not saved: {e}. Ask the owner to clarify."
+    row, ids = r["row"], r["product_ids"]
+    names = products.set_index(products["product_id"].astype(str))["name"]
+    shown = ", ".join(str(names.get(p, p)) for p in ids[:5]) + (f" and {len(ids) - 5} more" if len(ids) > 5 else "")
+    fc = _csv("forecast.csv")
+    impact = ""
+    if len(fc):
+        new, _, rep = ADJ.apply(fc, pd.DataFrame([row]), products, bm, cmap)
+        if len(rep) and rep["rows"].iloc[0]:
+            impact = f" Forecast for those months: {_num(rep['before'].iloc[0])} -> {_num(rep['after'].iloc[0])} cases."
+    return (f"Proposed {row['adj_id']} (not saved to the plan yet): {ADJ.label(row)}; {row['scope']} '{row['target']}' "
+            f"covers {len(ids)} product(s): {shown}; months {row['months'].replace(';', ', ')}.{impact} "
+            f"Read this back to the owner and ask him to confirm; only then call confirm_adjustment('{row['adj_id']}').")
+
+
+@tool
+def confirm_adjustment(adj_id: str) -> str:
+    """Save a proposed adjustment into the plan, after the owner has said yes to the read-back."""
+    c = current()
+    if not c.is_owner:
+        return OWNER_ONLY
+    from inventory import adjustments as ADJ
+    try:
+        row = ADJ.confirm(c.data, adj_id)
+    except ValueError as e:
+        return f"Not confirmed: {e}."
+    return f"Confirmed {row['adj_id']}: {ADJ.label(row)}. {_replan()} Affected order lines show this reason."
+
+
+@tool
+def cancel_adjustment(adj_id: str) -> str:
+    """Cancel an adjustment (proposed or confirmed) when the owner asks. Use list_adjustments to find the id."""
+    c = current()
+    if not c.is_owner:
+        return OWNER_ONLY
+    from inventory import adjustments as ADJ
+    try:
+        row = ADJ.cancel(c.data, adj_id)
+    except ValueError as e:
+        return f"Not cancelled: {e}."
+    return f"Cancelled {row['adj_id']} ({ADJ.label(row)}). {_replan()}"
+
+
+@tool
+def list_adjustments() -> str:
+    """The owner's demand adjustments with their state: proposed (waiting for a yes), active, expired or cancelled."""
+    if not current().is_owner:
+        return OWNER_ONLY
+    from inventory import adjustments as ADJ
+    df = ADJ.with_state(ADJ.load(current().data), current().today)
+    if df.empty:
+        return "No adjustments recorded."
+    return _cap("\n".join(f"{r.adj_id}: {ADJ.label(r._asdict())} ({r.scope} '{r.target}', {r.months.replace(';', ', ')}) "
+                          f"- {r.state}" for r in df.itertuples()))
+
+
 # ------------------------------------------------------------------ web and research writes
 def _tavily_client():
     key = os.environ.get("TAVILY_API_KEY")
@@ -537,8 +635,9 @@ def add_alerts(rows: list[dict]) -> str:
 
 
 READ_TOOLS = [what_to_order, explain_product, festival_window, harvest_plan, products_at_risk, alternative_sources,
-              consolidation_options, country_alerts, forecast_quality, pending_questions]
-WRITE_TOOLS = [record_answer, log_event, log_override, add_leads, add_alerts]
+              consolidation_options, country_alerts, forecast_quality, pending_questions, list_adjustments]
+WRITE_TOOLS = [record_answer, log_event, log_override, add_leads, add_alerts, propose_adjustment, confirm_adjustment,
+               cancel_adjustment]
 ALL_TOOLS = READ_TOOLS + WRITE_TOOLS + [web_search]
 
 
