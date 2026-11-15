@@ -1,18 +1,37 @@
 # Engine issues and proposals
 
-For Nakul. Status as of 2026-11-14. Two small fixes are already in (approved by Dhruv). Two
-proposals need your approval before anything changes in the engine. The last section lists README
-text that is out of date.
+For Nakul. Status as of 2026-11-14. All five are done: #3 and #4 were small fixes, #1 and #2 were applied
+exactly as proposed after your approval (the proposals are kept below as the record of what was agreed),
+and #5 is documented. The last section lists README text that is still out of date.
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | Weights like "(400 Gram)" make a product a dal; AR202 Basmati Rice misses the rice harvest rule | **Proposal below: needs your OK** |
-| 2 | `owner_answers.csv` is written by the dashboard but the engine never reads it | **Proposal below: needs your OK** |
+| 1 | Weights like "(400 Gram)" made a product a dal; AR202 Basmati Rice missed the rice harvest rule | **Fixed** (commit "Weights no longer decide a product's category") |
+| 2 | `owner_answers.csv` was written by the dashboard but the engine never read it | **Fixed** (commit "Owner answers feed the engine on every run") |
 | 3 | `brand_orders.csv` had two columns named `containers` | Fixed |
 | 4 | `run.py --generate` wrote synthetic data into the real `data/` | Fixed |
 | 5 | `run.py` rewrites `data/sales.csv`; `--retest` rewrites tracked `config/forecaster.txt` | Documented in README (no code change) |
 
 ---
+
+## Real-data run after all fixes (2026-11-14, without --retest)
+
+`python run.py --source real --today 2026-11-14`, compared with the brand orders from before #1 (same plan date,
+same `config/forecaster.txt`: blend_0.5 on ml_regular). No owner answers exist on the real data yet, so #2 changes
+nothing there; the differences come from #1 and the retrained models.
+
+- **Orders**: 99 before and after; statuses unchanged (Order now 90, Coming up 9); containers needed 135 both times.
+- **Order dates**: three "Coming up" orders moved one week earlier (Boost 2027-01-09 to 01-02, TT 02-27 to 02-20,
+  Zafrani 03-27 to 03-20): their next product reaches its reorder point a week sooner on the new forecast.
+- **Cases**: 506 of 2,198 product lines in orders changed, 372 of them by one case; net -163 of 225,450 cases (-0.07%).
+  Container volume 52.37 to 52.41; 6 orders' volume moved slightly (new CBM estimates for the recategorized products
+  and the pull-forward that fills the last container).
+- **#1**: AR202 left the regular Aara order (6 cases) and is now an annual rice buy (`Aara|harvest-2027-01`, 35 cases,
+  order Jan 2027, arrives Apr 2027); the recategorized nuts products moved by 1-4 cases each.
+- **Forecasts**: every product's forecast moved a little (12-month total after/before: median 1.002, 90% between
+  0.955 and 1.111; overall +0.01%). That is the global LightGBM model retrained after the category change; it can't
+  be separated from run-to-run or machine differences (the "before" outputs may come from another machine or
+  LightGBM version) without a control run on the old categories.
 
 ## Fixed
 
@@ -45,7 +64,12 @@ weight limit, via the first test of `build_with_stock`; CSV round trip; generate
 
 ---
 
-## Proposal #1: weights must not decide the category
+## #1: weights must not decide the category (fixed)
+
+**Applied as proposed** (strip weights before matching). On the real data exactly the 11 products in the table
+below changed category; AR202 is now in `harvest_orders.csv` (order Jan 2027, arrives Apr 2027); none of the
+19 raisin / pistachio / coconut powder products is filed as a dal. The tests listed below are in
+`tests/test_brands.py`.
 
 ### The problem
 
@@ -152,9 +176,23 @@ def test_basmati_rice_joins_rice_harvest_rule():
 
 ---
 
-## Proposal #2: the engine reads `owner_answers.csv` on every run
+## #2: the engine reads `owner_answers.csv` on every run (fixed)
 
-### Today
+**Applied as proposed**, with these decisions: a `new:PID` note never sets a forecast (it only confirms or
+discontinues); `outputs/holds_now.csv` plus the matching `api/main.py` change are in (the API reads it and falls
+back to `sales.csv` for older outputs); hand-written override files win over answers and the clash is listed in
+`outputs/answers_applied.csv`. Also needed for "released holds are ordered again": `plan.order_plan(keep=...)`
+keeps released holds out of the inactive list (they have no recent sales because they were on hold).
+
+Code: `inventory/answers.py`, hooks in `run.py`, `brand_orders.run`, `stock_ingest.run`, `ingest.run`
+(`build_item_map(extra_merges=...)`), `stock_plan.cbm_table(answers=...)`. Tests: `tests/test_answers.py`
+(every type with yes / no / not sure, latest wins, malformed and unknown rows) and `tests/test_answer_loop.py`
+(answer on the dashboard, re-run the engine on demo data, the hold is released and the product is ordered).
+
+Known edge: if `stock:units` is answered "no" while `stock:on_order` is answered "no", the API's `stock_flags()`
+still sees a warning and keeps showing the on-order question (it treats any warning as "on order missing").
+
+### Before this fix
 
 The dashboard's "Questions for you" page appends answers to `data/owner_answers.csv`
 (`question_id, answer, note, timestamp`; answer is `yes`, `no` or `not sure`; the latest answer per question
@@ -205,9 +243,8 @@ written by `gaps.relabel_holds()`), and `brand_orders.current_holds()` takes the
   config, harvest rule overrides.
 - `ingest.build_item_map()`: code merges (`status = needs ingest` until `--ingest` runs).
 
-**API note:** `api/main.py` computes holds from `sales.csv` itself (`holds_now()`), so a released hold
-would still show as "on hold" on the dashboard. The clean fix is for the engine to write the effective
-holds (e.g. `outputs/holds_now.csv`) and the API to read it. That touches the API too, so it's your call.
+**API note (done):** `api/main.py` computed holds from `sales.csv` itself (`holds_now()`), so a released hold
+would still have shown as "on hold". The engine now writes `outputs/holds_now.csv` and the API reads it.
 
 ### Tests (synthetic data)
 
@@ -227,6 +264,8 @@ answer wins; deleting an answer undoes its effect; "not sure" never changes outp
 ---
 
 ## README text that is out of date (to fix later)
+
+(The README's category and owner-answer sections were updated with #1 and #2; the items below are still open.)
 
 - **Intro**: "gross need; no stock netting yet" and "dashboard layers come next": stock netting and the
   dashboard both exist.

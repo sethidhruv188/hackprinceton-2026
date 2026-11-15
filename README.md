@@ -120,7 +120,37 @@ Pages:
    months shaded, spikes with their likely cause, Diwali dates, the reorder point in words.
 4. **Diwali**: total sold per month with Diwali marked, the 2027 order window, top brands and products.
 5. **Questions for you**: holds, possible gaps, big one-off orders, unmerged item codes, new products,
-   biggest first; Yes / No / Not sure + note, saved to `data/owner_answers.csv`.
+   biggest first; Yes / No / Not sure + note, saved to `data/owner_answers.csv`. The next `run.py` run
+   applies them (see "Owner answers" below).
+
+### Owner answers
+
+`inventory/answers.py` reads `data/owner_answers.csv` on every run and applies the answers in memory:
+`sales.csv`, `item_map.csv` and `config/*.csv` are never edited, so deleting or changing an answer undoes its
+effect on the next run. The latest answer per question wins. "Not sure" never changes anything.
+
+| Question | Yes | No |
+| --- | --- | --- |
+| `hold:PID` released from hold? | hold released from the answer date: planned and ordered again | stays on hold |
+| `gap:PID:YYYY-MM` unavailable then? | those months are filled, not scored | real zero sales; not asked again |
+| `oneoff:PID:YYYY-MM` a one-off? | stays capped in training | real demand: not capped |
+| `code:RAW` same product as BASE? | merged at the next `--ingest` | kept separate |
+| `code:RAW` (no current code) | merged into the code in the note at the next `--ingest` | discontinued |
+| `new:PID` keep selling? | kept (a note never sets a forecast) | discontinued: out of the plan and orders |
+| `stock:on_order` stock at sea missing? | stronger warning on every order | nothing on the way: warning removed |
+| `stock:units` packs, not cases? | confirmed | no automatic change; warning on every order |
+| `units:PID` stock right? | accepted, no longer flagged | ordered as if none on hand, or the number in the note |
+| `invcode:RAW` another code, or packaging? | stock counts for the product code in the note | packaging: ignored |
+| `cbm:PID` case size? | the note's size ("0.045 cbm", "40x30x25 cm", "16x12x10 in") | same |
+| `container:limits` 80 CBM right, weight limit? | kg / lb / t in the note set the weight limit | numbers with units replace CBM and/or weight limit |
+| `harvest:RULE` annual buy, which months? | confirmed if the note says "order <months>, arrives <months>" | candidate removed: regular rule |
+
+Hand-written override files win over answers (`data/raw/case_cbm.csv`, rules already confirmed in
+`config/harvest.csv`); the clash is reported. Each run writes `outputs/answers_applied.csv` with a status
+for every row: `applied`, `confirmed`, `no change`, `needs ingest`, `note not understood`,
+`conflict: override file wins`, `not found`, `superseded`, `unknown question` or `malformed row`. Bad rows
+never stop a run; anything that needs attention is listed in section 9 of `outputs/backtest_report.md`.
+`outputs/holds_now.csv` lists the products on hold after the answers; the dashboard reads it.
 6. **How good is the forecast**: the replay result in plain words (it ties averaging at equal stock).
 
 Brands and brand orders (written by `run.py`, or `python -m inventory.brand_orders --today ...`):
@@ -238,6 +268,12 @@ python run.py --ingest       # data/raw/sales/*.xlsx -> data/sales.csv, products
 - sets lead time to 130 days worst case (`lead_time_days`, used for order-by dates) and 105 typical
   (`lead_time_typical_days`) for every product, and guesses category from the name. Shelf life is
   left blank: no guessed value caps any quantity.
+- **categories** come from whole-word keywords in the name (`ingest.CATEGORIES`, first match wins).
+  Weights and volumes ("(400 Gram)", "908 Grams", "2 lb", "1.5 L") are removed first, so a unit never decides
+  the category: "Horse Gram" and "Gram Flour" are dals, "Green Raisin (400 Gram)" is a dry fruit. Category
+  drives the estimated CBM per case (`config/densities.csv`), harvest-rule matching (`config/harvest.csv`),
+  the model's `cat_code` feature and the category Diwali lift. After changing the rules, run
+  `python -c "from inventory import ingest; print(ingest.recategorize())"` (or `--ingest`), then `run.py`.
   Real values go in `data/raw/product_overrides.csv` (`product_id` plus any `products.csv` column) and win.
 
 Audit files: `data/item_map.csv` (every raw code: target product, merge rule, conversion factor,
@@ -270,6 +306,7 @@ aggregate to months first (or extend `schema.load` to weekly).
 | `inventory/forecast.py` | Direct LightGBM models per horizon: Tweedie mean, p50, p90; lags, rolling means, trend, Diwali features (raises past the calendar end), Diwali lift and spike rate built only from data through T-h; feature importance; save/load models; the averaging baseline |
 | `inventory/spikes.py` | Spike detection, cause attribution, recurrence, product profiles, one-off caps |
 | `inventory/brands.py`, `inventory/brand_orders.py` | Brand per product; one order per brand per 2 months with status and holds excluded |
+| `inventory/answers.py` | The owner's dashboard answers applied on every run; `outputs/answers_applied.csv`, `outputs/holds_now.csv` |
 | `api/main.py`, `web/`, `dashboard.sh` | Local dashboard (FastAPI + React), see "Dashboard" |
 | `inventory/stock_ingest.py`, `inventory/stock_plan.py` | Inventory export -> stock.csv; status, projection, containers, harvest buys |
 | `inventory/policy.py` | Reorder point / order-up-to rule, day-prorated demand, `reorder_points()`, `stock_status()` for when stock data exists |
